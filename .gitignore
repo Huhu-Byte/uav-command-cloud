@@ -1,0 +1,46 @@
+# Java 后端
+target/
+*.class
+*.jar
+*.war
+*.log
+
+# Vue 前端
+node_modules/
+dist/
+.vite/
+
+# Python AI 服务
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 环境配置（含敏感信息）
+.env
+.env.local
+*.local.yml
+
+# 临时文件
+/tmp/
+
+# 临时文件
+*.json
+/tmp_api.json
+/tmp_bili*.json
+/tmp_search*.json
+
+# GitHub CLI 二进制
+gh.exe
+*.exe
