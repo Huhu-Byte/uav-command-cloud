@@ -20,6 +20,9 @@ venv/
 # 编辑器
 .idea/
 .vscode/
+.codex/
+.superpowers/
+.playwright-cli/
 *.swp
 *.swo
 
