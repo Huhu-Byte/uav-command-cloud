@@ -16,6 +16,8 @@ public class DjiMqttProperties {
     private boolean handshakeEnabled;
     private String gatewaySn = "";
     private String deviceBindingCode = "";
+    /** 内嵌 Broker 监听端口，0 表示使用默认 1883。 */
+    private int brokerPort = 0;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -39,4 +41,6 @@ public class DjiMqttProperties {
     public void setGatewaySn(String gatewaySn) { this.gatewaySn = gatewaySn == null ? "" : gatewaySn.trim(); }
     public String getDeviceBindingCode() { return deviceBindingCode; }
     public void setDeviceBindingCode(String deviceBindingCode) { this.deviceBindingCode = deviceBindingCode == null ? "" : deviceBindingCode.trim(); }
+    public int getBrokerPort() { return brokerPort; }
+    public void setBrokerPort(int brokerPort) { this.brokerPort = brokerPort; }
 }
