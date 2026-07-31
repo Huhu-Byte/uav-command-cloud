@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: uav-command-backend
+  # Redis 依赖已引入（供未来使用），但当前没有任何代码使用它。
+  # 排除自动配置，避免无 Redis 服务时启动失败。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   datasource:
     url: jdbc:h2:file:${user.home}/.uav-command/uav-command;MODE=MySQL;AUTO_SERVER=TRUE
     username: sa
@@ -42,6 +48,10 @@ app:
     handshake-enabled: ${UAV_DJI_MQTT_HANDSHAKE_ENABLED:false}
     gateway-sn: ${UAV_DJI_MQTT_GATEWAY_SN:}
     device-binding-code: ${UAV_DJI_DEVICE_BINDING_CODE:}
+    # 内嵌 Broker 开关（本机联调用）
+    embedded-broker: ${UAV_DJI_MQTT_EMBEDDED_BROKER:false}
+    # 内嵌 Broker 端口，0 = 使用默认 1883
+    broker-port: ${UAV_DJI_MQTT_BROKER_PORT:0}
   redis:
     host: ${UAV_REDIS_HOST:localhost}
     port: ${UAV_REDIS_PORT:6379}
