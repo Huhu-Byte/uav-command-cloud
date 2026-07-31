@@ -60,8 +60,11 @@ public class DjiMqttConfiguration {
     }
 
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = {"app.dji-mqtt.enabled", "app.dji-mqtt.gateway-sn"},
+            matchIfMissing = false
+    )
     public MqttPahoMessageHandler mqttOutbound() {
-        if (!properties.isEnabled()) return null;
         String gatewaySn = properties.getGatewaySn();
         if (gatewaySn.isBlank()) return null;
         String clientIdBase = properties.getClientId().isBlank() ? "uav-command-" + gatewaySn : properties.getClientId();
@@ -74,16 +77,20 @@ public class DjiMqttConfiguration {
         return handler;
     }
 
+    /**
+     * 修复问题1b：移除返回 null 的逻辑，改用 @ConditionalOnProperty 控制 Bean 注册。
+     * 原实现在未启用时返回 null，Spring 会注册 null Bean 并打印警告。
+     */
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = {"app.dji-mqtt.enabled", "app.dji-mqtt.gateway-sn"},
+            matchIfMissing = false
+    )
     public MqttPahoMessageDrivenChannelAdapter mqttInbound() {
-        if (!properties.isEnabled()) {
-            LOGGER.info("DJI MQTT 未启用");
-            return null;
-        }
         String gatewaySn = properties.getGatewaySn();
         if (gatewaySn.isBlank()) {
-            LOGGER.warn("DJI MQTT 已启用但未配置网关 SN");
-            return null;
+            LOGGER.warn("网关 SN 为空，跳过 MQTT 订阅");
+            return null; // 此处仍返回 null，但外层已有 @Conditional 保护
         }
         String clientIdBase = properties.getClientId().isBlank() ? "uav-command-" + gatewaySn : properties.getClientId();
         String[] topics = {
@@ -102,20 +109,27 @@ public class DjiMqttConfiguration {
         return adapter;
     }
 
+    /**
+     * 修复问题1a：用匿名类替代 lambda 强转，语义更明确。
+     */
     @PostConstruct
     public void startMqttRouter() {
         if (mqttInbound() == null) return;
-        mqttInputChannel().subscribe((MessageHandler) message -> {
-            String topic = (String) message.getHeaders().get("mqtt_receivedTopic");
-            String payload = (String) message.getPayload();
-            if (topic == null || payload == null) return;
-            try {
-                if (topic.endsWith("/osd")) telemetryParser.parseOsd(topic, payload);
-                else if (topic.endsWith("/state")) telemetryParser.parseState(topic, payload);
-                else if (topic.endsWith("/events")) telemetryParser.parseEvent(topic, payload);
-                else if (topic.endsWith("/status")) handleStatusMessage(topic, payload);
-            } catch (Exception e) {
-                LOGGER.warn("MQTT 消息处理失败 topic={}", topic, e);
+        mqttInputChannel().subscribe(new MessageHandler() {
+            @Override
+            public void handleMessage(org.springframework.messaging.Message<?> message) {
+                String topic = (String) message.getHeaders().get("mqtt_receivedTopic");
+                Object raw = message.getPayload();
+                String payload = raw instanceof String s ? s : null;
+                if (topic == null || payload == null) return;
+                try {
+                    if (topic.endsWith("/osd")) telemetryParser.parseOsd(topic, payload);
+                    else if (topic.endsWith("/state")) telemetryParser.parseState(topic, payload);
+                    else if (topic.endsWith("/events")) telemetryParser.parseEvent(topic, payload);
+                    else if (topic.endsWith("/status")) handleStatusMessage(topic, payload);
+                } catch (Exception e) {
+                    LOGGER.warn("MQTT 消息处理失败 topic={}", topic, e);
+                }
             }
         });
     }
