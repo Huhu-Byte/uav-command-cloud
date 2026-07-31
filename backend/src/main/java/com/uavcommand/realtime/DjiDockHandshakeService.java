@@ -80,12 +80,14 @@ public class DjiDockHandshakeService {
     }
 
     private String wrapReply(String tid, String bid, String method, int result, Map<String, Object> data) {
+        Map<String, Object> mutableData = new LinkedHashMap<>(data != null ? data : Map.of());
+        if (result != 0) mutableData.put("result", result);
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("tid", tid == null ? "" : tid);
         root.put("bid", bid == null ? "" : bid);
         root.put("method", method);
         root.put("timestamp", Instant.now().toEpochMilli());
-        root.put("data", data);
+        root.put("data", mutableData);
         try {
             return MAPPER.writeValueAsString(root);
         } catch (JsonProcessingException e) {
