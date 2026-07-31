@@ -26,20 +26,21 @@ public class DjiCloudApiClient {
     }
 
     public Readiness readiness() {
+        MqttStatus mqtt = new MqttStatus(false, null);
         if (!properties.isEnabled()) {
-            return new Readiness(false, false, "真实 DJI Cloud API 尚未启用，系统继续使用本机模拟器", 0, 0, 0);
+            return new Readiness(false, false, "真实 DJI Cloud API 尚未启用，系统继续使用本机模拟器", 0, 0, 0, mqtt);
         }
         if (isBlank(properties.getBaseUrl()) || isBlank(properties.getClientId()) || isBlank(properties.getClientSecret())) {
-            return new Readiness(true, false, "真实 DJI Cloud API 已启用，但服务器环境变量尚未完整配置", 0, 0, 0);
+            return new Readiness(true, false, "真实 DJI Cloud API 已启用，但服务器环境变量尚未完整配置", 0, 0, 0, mqtt);
         }
         if (!isSafeBaseUrl(properties.getBaseUrl())) {
-            return new Readiness(true, false, "DJI API 地址无效；真实环境必须使用 HTTPS，本机联调可使用 localhost", 0, 0, 0);
+            return new Readiness(true, false, "DJI API 地址无效；真实环境必须使用 HTTPS，本机联调可使用 localhost", 0, 0, 0, mqtt);
         }
         if (properties.getConnectTimeoutMs() <= 0
                 || properties.getReadTimeoutMs() <= 0
                 || properties.getMaxRetries() < 0
                 || properties.getMaxRetries() > 5) {
-            return new Readiness(true, false, "DJI API 的超时或重试配置无效，已拒绝建立连接", 0, 0, 0);
+            return new Readiness(true, false, "DJI API 的超时或重试配置无效，已拒绝建立连接", 0, 0, 0, mqtt);
         }
         return new Readiness(
                 true,
@@ -48,6 +49,7 @@ public class DjiCloudApiClient {
                 properties.getConnectTimeoutMs(),
                 properties.getReadTimeoutMs(),
                 properties.getMaxRetries()
+                , mqtt
         );
     }
 

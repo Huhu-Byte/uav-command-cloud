@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 public class RealtimeStatusPublisher {
     private final DroneStatusService droneStatusService;
     private final DroneStatusWebSocketHandler webSocketHandler;
+    private volatile boolean simulatorDisabled;
 
     public RealtimeStatusPublisher(DroneStatusService droneStatusService, DroneStatusWebSocketHandler webSocketHandler) {
         this.droneStatusService = droneStatusService;
@@ -15,6 +16,12 @@ public class RealtimeStatusPublisher {
 
     @Scheduled(fixedRate = 3000)
     public void publishStatus() {
+        if (simulatorDisabled) return;
         webSocketHandler.broadcast(droneStatusService.nextStatus());
+    }
+
+    public void publish(RealtimeStatusSnapshot snapshot) {
+        simulatorDisabled = true;
+        webSocketHandler.broadcast(snapshot);
     }
 }

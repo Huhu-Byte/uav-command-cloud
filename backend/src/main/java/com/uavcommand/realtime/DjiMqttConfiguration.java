@@ -1,5 +1,6 @@
 package com.uavcommand.realtime;
 
+import jakarta.annotation.PostConstruct;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +11,8 @@ import org.springframework.integration.mqtt.core.DefaultMqttPahoClientFactory;
 import org.springframework.integration.mqtt.core.MqttPahoClientFactory;
 import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannelAdapter;
 import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
-import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.SubscribableChannel;
+import org.springframework.messaging.MessageHandler;
 
 @Configuration
 public class DjiMqttConfiguration {
@@ -42,19 +44,20 @@ public class DjiMqttConfiguration {
     }
 
     @Bean
-    public MessageChannel mqttInputChannel() {
-        return new DirectChannel();
+    public SubscribableChannel mqttInputChannel() {
+        DirectChannel channel = new DirectChannel();
+        return channel;
     }
 
     @Bean
     public MqttPahoMessageDrivenChannelAdapter mqttInbound() {
         if (!properties.isEnabled()) {
-            LOGGER.info("DJI MQTT 未启用，不创建订阅适配器");
+            LOGGER.info("DJI MQTT 未启用");
             return null;
         }
         String gatewaySn = properties.getGatewaySn();
         if (gatewaySn.isBlank()) {
-            LOGGER.warn("DJI MQTT 已启用但未配置网关 SN，不创建订阅");
+            LOGGER.warn("DJI MQTT 已启用但未配置网关 SN");
             return null;
         }
         String clientIdBase = properties.getClientId().isBlank() ? "uav-command-" + gatewaySn : properties.getClientId();
@@ -66,9 +69,7 @@ public class DjiMqttConfiguration {
         };
         int[] qos = {0, 0, 1, 0};
         MqttPahoMessageDrivenChannelAdapter adapter = new MqttPahoMessageDrivenChannelAdapter(
-                clientIdBase + "-inbound",
-                mqttClientFactory(),
-                topics);
+                clientIdBase + "-inbound", mqttClientFactory(), topics);
         adapter.setCompletionTimeout(properties.getConnectTimeoutMs());
         adapter.setConverter(new DefaultPahoMessageConverter());
         adapter.setQos(qos);
@@ -76,27 +77,21 @@ public class DjiMqttConfiguration {
         return adapter;
     }
 
-    @Bean
-    public Object mqttMessageRouter() {
-        if (mqttInbound() == null) return null;
-        mqttInputChannel().subscribe(message -> {
+    @PostConstruct
+    public void startMqttRouter() {
+        if (mqttInbound() == null) return;
+        mqttInputChannel().subscribe((MessageHandler) message -> {
             String topic = (String) message.getHeaders().get("mqtt_receivedTopic");
             String payload = (String) message.getPayload();
             if (topic == null || payload == null) return;
             try {
-                if (topic.endsWith("/osd")) {
-                    telemetryParser.parseOsd(topic, payload);
-                } else if (topic.endsWith("/state")) {
-                    telemetryParser.parseState(topic, payload);
-                } else if (topic.endsWith("/events")) {
-                    telemetryParser.parseEvent(topic, payload);
-                } else if (topic.endsWith("/status")) {
-                    telemetryParser.parseStatus(topic, payload);
-                }
+                if (topic.endsWith("/osd")) telemetryParser.parseOsd(topic, payload);
+                else if (topic.endsWith("/state")) telemetryParser.parseState(topic, payload);
+                else if (topic.endsWith("/events")) telemetryParser.parseEvent(topic, payload);
+                else if (topic.endsWith("/status")) telemetryParser.parseStatus(topic, payload);
             } catch (Exception e) {
-                LOGGER.warn("MQTT 消息处理失败 topic={} error={}", topic, e.getMessage());
+                LOGGER.warn("MQTT 消息处理失败 topic={}", topic, e);
             }
         });
-        return "mqtt-router-configured";
     }
 }
