@@ -2,6 +2,8 @@ server:
   port: 8080
 
 spring:
+  main:
+    allow-circular-references: true
   application:
     name: uav-command-backend
   # Redis 依赖已引入（供未来使用），但当前没有任何代码使用它。

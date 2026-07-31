@@ -25,7 +25,7 @@ import io.moquette.broker.config.MemoryConfig;
 @ConditionalOnProperty(name = "app.dji-mqtt.embedded-broker", havingValue = "true")
 public class EmbeddedMqttBroker {
     private static final Logger LOGGER = LoggerFactory.getLogger(EmbeddedMqttBroker.class);
-    private static final int DEFAULT_PORT = 1883;
+    private static final int DEFAULT_PORT = 1884;
 
     private final DjiMqttProperties mqttProperties;
     private Server server;
