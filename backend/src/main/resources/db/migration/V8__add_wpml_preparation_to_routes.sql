@@ -1,0 +1,2 @@
+﻿-- V8: WPML 导出准备字段
+ALTER TABLE route_drafts ADD COLUMN IF NOT EXISTS wpml_ready BOOLEAN DEFAULT FALSE;

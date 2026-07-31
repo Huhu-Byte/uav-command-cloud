@@ -1,0 +1,8 @@
+﻿-- V7: 航线版本
+CREATE TABLE IF NOT EXISTS route_versions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    draft_id BIGINT NOT NULL,
+    version INT NOT NULL DEFAULT 1,
+    waypoints TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

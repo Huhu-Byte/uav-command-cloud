@@ -1,0 +1,2 @@
+﻿-- V11: 成果来源标记
+ALTER TABLE inspection_results ADD COLUMN IF NOT EXISTS media_source VARCHAR(50) DEFAULT 'LOCAL_CATALOG';
