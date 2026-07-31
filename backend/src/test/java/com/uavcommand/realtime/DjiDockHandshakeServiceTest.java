@@ -47,8 +47,23 @@ class DjiDockHandshakeServiceTest {
     }
 
     @Test
+    void organizationBindBlankServerCodeReturnsEmpty() {
+        // 服务端未配置绑定码时，不应答（与 org_get 行为一致），而不是返回 result=1 让设备不断重试
+        String reply = service.buildOrganizationBindReply("tid-5", "bid-5", "SN001", "any-code");
+        assertTrue(reply.isEmpty());
+    }
+
+    @Test
     void organizationBindMismatchedCodeReturnsFailure() {
-        String reply = service.buildOrganizationBindReply("tid-5", "bid-5", "SN001", "wrong-code");
+        // 服务端已配置绑定码，但设备发来的码不匹配，才应返回 result=1
+        DjiMqttProperties mqttPropsWithCode = new DjiMqttProperties();
+        mqttPropsWithCode.setDeviceBindingCode("correct-code");
+        DjiCloudApiProperties cloudProps = new DjiCloudApiProperties();
+        cloudProps.setClientId("test-app-id");
+        cloudProps.setClientSecret("test-license");
+        DjiDockHandshakeService svc = new DjiDockHandshakeService(cloudProps, mqttPropsWithCode, new DjiDockTopologyRegistry());
+
+        String reply = svc.buildOrganizationBindReply("tid-5", "bid-5", "SN001", "wrong-code");
         assertTrue(reply.contains("\"result\":1"));
     }
 }

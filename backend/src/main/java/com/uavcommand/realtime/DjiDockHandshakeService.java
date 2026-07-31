@@ -67,7 +67,13 @@ public class DjiDockHandshakeService {
 
     public String buildOrganizationBindReply(String reqTid, String reqBid, String gatewaySn, String reqBindingCode) {
         String serverCode = mqttProperties.getDeviceBindingCode();
-        if (serverCode.isBlank() || !serverCode.equals(reqBindingCode)) {
+        // 修复问题3b：服务端未配置绑定码时，不应返回 result=1（设备会认为绑定失败并重试）
+        // 与 buildOrganizationGetReply 保持一致，返回空字符串表示"服务端未就绪，不应答"
+        if (serverCode.isBlank()) {
+            LOGGER.info("org_bind: 服务端绑定码未配置，不应答 gatewaySn={}", gatewaySn);
+            return "";
+        }
+        if (!serverCode.equals(reqBindingCode)) {
             LOGGER.info("org_bind: binding code 不匹配 gatewaySn={}", gatewaySn);
             return wrapReply(reqTid, reqBid, "airport_organization_bind", 1, Map.of());
         }
@@ -80,14 +86,14 @@ public class DjiDockHandshakeService {
     }
 
     private String wrapReply(String tid, String bid, String method, int result, Map<String, Object> data) {
-        Map<String, Object> mutableData = new LinkedHashMap<>(data != null ? data : Map.of());
-        if (result != 0) mutableData.put("result", result);
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("tid", tid == null ? "" : tid);
         root.put("bid", bid == null ? "" : bid);
         root.put("method", method);
         root.put("timestamp", Instant.now().toEpochMilli());
-        root.put("data", mutableData);
+        // 修复问题3a：DJI 官方报文规范要求 result 在根层，不在 data 子层
+        root.put("result", result);
+        root.put("data", data != null ? data : Map.of());
         try {
             return MAPPER.writeValueAsString(root);
         } catch (JsonProcessingException e) {

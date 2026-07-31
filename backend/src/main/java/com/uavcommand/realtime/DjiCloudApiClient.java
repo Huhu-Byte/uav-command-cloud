@@ -20,13 +20,19 @@ import org.springframework.web.client.RestClientException;
 public class DjiCloudApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(DjiCloudApiClient.class);
     private final DjiCloudApiProperties properties;
+    private final DjiMqttProperties mqttProperties;
 
-    public DjiCloudApiClient(DjiCloudApiProperties properties) {
+    public DjiCloudApiClient(DjiCloudApiProperties properties, DjiMqttProperties mqttProperties) {
         this.properties = properties;
+        this.mqttProperties = mqttProperties;
     }
 
     public Readiness readiness() {
-        MqttStatus mqtt = new MqttStatus(false, null);
+        // 修复问题5a：从 DjiMqttProperties 读取真实 MQTT 配置，不再硬编码 false/null
+        MqttStatus mqtt = new MqttStatus(
+                mqttProperties.isEnabled(),
+                mqttProperties.isEnabled() ? mqttProperties.getBrokerUrl() : null
+        );
         if (!properties.isEnabled()) {
             return new Readiness(false, false, "真实 DJI Cloud API 尚未启用，系统继续使用本机模拟器", 0, 0, 0, mqtt);
         }
@@ -42,14 +48,15 @@ public class DjiCloudApiClient {
                 || properties.getMaxRetries() > 5) {
             return new Readiness(true, false, "DJI API 的超时或重试配置无效，已拒绝建立连接", 0, 0, 0, mqtt);
         }
+        // 修复问题5b：格式对齐，逗号在行尾
         return new Readiness(
                 true,
                 true,
                 "真实 DJI Cloud API 配置已就绪；当前仍未发送任何真实设备请求",
                 properties.getConnectTimeoutMs(),
                 properties.getReadTimeoutMs(),
-                properties.getMaxRetries()
-                , mqtt
+                properties.getMaxRetries(),
+                mqtt
         );
     }
 

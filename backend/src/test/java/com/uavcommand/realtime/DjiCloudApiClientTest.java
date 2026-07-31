@@ -13,7 +13,7 @@ import org.springframework.web.client.ResourceAccessException;
 class DjiCloudApiClientTest {
     @Test
     void staysDisabledWithoutServerConfiguration() {
-        DjiCloudApiClient client = new DjiCloudApiClient(new DjiCloudApiProperties());
+        DjiCloudApiClient client = new DjiCloudApiClient(new DjiCloudApiProperties(), new DjiMqttProperties());
 
         DjiCloudApiClient.Readiness readiness = client.readiness();
 
@@ -26,7 +26,7 @@ class DjiCloudApiClientTest {
     void reportsIncompleteConfigurationWithoutExposingSecrets() {
         DjiCloudApiProperties properties = configuredProperties();
         properties.setClientSecret("");
-        DjiCloudApiClient client = new DjiCloudApiClient(properties);
+        DjiCloudApiClient client = new DjiCloudApiClient(properties, new DjiMqttProperties());
 
         DjiCloudApiClient.Readiness readiness = client.readiness();
 
@@ -40,7 +40,7 @@ class DjiCloudApiClientTest {
     void rejectsUnsafeBaseUrlAndExcessiveRetries() {
         DjiCloudApiProperties properties = configuredProperties();
         properties.setBaseUrl("http://api.example.com");
-        DjiCloudApiClient client = new DjiCloudApiClient(properties);
+        DjiCloudApiClient client = new DjiCloudApiClient(properties, new DjiMqttProperties());
 
         assertFalse(client.readiness().configured());
 
@@ -53,7 +53,7 @@ class DjiCloudApiClientTest {
     void retriesReadOnlyFailuresAndThenReturnsResult() {
         DjiCloudApiProperties properties = configuredProperties();
         properties.setMaxRetries(2);
-        DjiCloudApiClient client = new DjiCloudApiClient(properties);
+        DjiCloudApiClient client = new DjiCloudApiClient(properties, new DjiMqttProperties());
         AtomicInteger attempts = new AtomicInteger();
 
         String result = client.executeReadOnly(DjiCloudApiClient.ReadOperation.DEVICE_STATUS, () -> {
@@ -71,7 +71,7 @@ class DjiCloudApiClientTest {
     void stopsAfterConfiguredRetryLimit() {
         DjiCloudApiProperties properties = configuredProperties();
         properties.setMaxRetries(1);
-        DjiCloudApiClient client = new DjiCloudApiClient(properties);
+        DjiCloudApiClient client = new DjiCloudApiClient(properties, new DjiMqttProperties());
         AtomicInteger attempts = new AtomicInteger();
 
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> client.executeReadOnly(
@@ -88,7 +88,7 @@ class DjiCloudApiClientTest {
 
     @Test
     void onlyAllowsRelativeReadPaths() {
-        DjiCloudApiClient client = new DjiCloudApiClient(configuredProperties());
+        DjiCloudApiClient client = new DjiCloudApiClient(configuredProperties(), new DjiMqttProperties());
 
         assertThrows(IllegalArgumentException.class, () -> client.getReadOnly(
                 DjiCloudApiClient.ReadOperation.DEVICE_STATUS,
