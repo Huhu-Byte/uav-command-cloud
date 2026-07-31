@@ -4,3 +4,44 @@ server:
 spring:
   application:
     name: uav-command-backend
+  datasource:
+    url: jdbc:h2:file:${user.home}/.uav-command/uav-command;MODE=MySQL;AUTO_SERVER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 1
+
+app:
+  cors:
+    allowed-origin-patterns: ${UAV_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}
+  security:
+    demo-auth-enabled: ${UAV_DEMO_AUTH_ENABLED:true}
+  dji-cloud:
+    enabled: ${UAV_DJI_CLOUD_ENABLED:false}
+    base-url: ${UAV_DJI_CLOUD_BASE_URL:}
+    client-id: ${UAV_DJI_CLOUD_CLIENT_ID:}
+    client-secret: ${UAV_DJI_CLOUD_CLIENT_SECRET:}
+    connect-timeout-ms: ${UAV_DJI_CLOUD_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${UAV_DJI_CLOUD_READ_TIMEOUT_MS:5000}
+    max-retries: ${UAV_DJI_CLOUD_MAX_RETRIES:2}
+  dji-mqtt:
+    enabled: ${UAV_DJI_MQTT_ENABLED:false}
+    broker-url: ${UAV_DJI_MQTT_BROKER_URL:}
+    client-id: ${UAV_DJI_MQTT_CLIENT_ID:}
+    username: ${UAV_DJI_MQTT_USERNAME:}
+    password: ${UAV_DJI_MQTT_PASSWORD:}
+    connect-timeout-ms: ${UAV_DJI_MQTT_CONNECT_TIMEOUT_MS:5000}
+    keep-alive-sec: ${UAV_DJI_MQTT_KEEP_ALIVE_SEC:30}
+    clean-session: ${UAV_DJI_MQTT_CLEAN_SESSION:true}
+    handshake-enabled: ${UAV_DJI_MQTT_HANDSHAKE_ENABLED:false}
+    gateway-sn: ${UAV_DJI_MQTT_GATEWAY_SN:}
+    device-binding-code: ${UAV_DJI_DEVICE_BINDING_CODE:}
+  redis:
+    host: ${UAV_REDIS_HOST:localhost}
+    port: ${UAV_REDIS_PORT:6379}

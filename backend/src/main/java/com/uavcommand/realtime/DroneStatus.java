@@ -13,7 +13,8 @@ public record DroneStatus(
         int inspectedPoints,
         int totalPoints,
         List<DeviceStatus> devices,
-        AlertStatus alert
+        AlertStatus alert,
+        ReturnStatus returnStatus
 ) {
     public record DeviceStatus(String name, String status, int battery) { }
 
@@ -29,5 +30,43 @@ public record DroneStatus(
             String handledBy,
             String handledAt,
             String handlingResult
+    ) { }
+
+    public record ReturnStatus(
+            boolean inProgress,
+            String phase,
+            String message,
+            int returnProgress,
+            OperationRecord lastOperation
+    ) { }
+
+    public record OperationRecord(
+            String operator,
+            String timestamp,
+            String action,
+            String result,
+            String reason
+    ) { }
+
+    public record AlertRecord(
+            String handler,
+            String timestamp,
+            String result,
+            String level,
+            String title,
+            String detail,
+            String occurredAt,
+            String device
+    ) { }
+
+    public record ActivityRecord(
+            String key,
+            String type,
+            String timestamp,
+            String operator,
+            String result,
+            String title,
+            String detail,
+            String device
     ) { }
 }

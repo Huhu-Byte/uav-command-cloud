@@ -27,7 +27,7 @@ public class DroneStatusWebSocketHandler extends TextWebSocketHandler {
         sessions.remove(session);
     }
 
-    public void broadcast(DroneStatus status) {
+    public void broadcast(RealtimeStatusSnapshot status) {
         try {
             TextMessage message = new TextMessage(objectMapper.writeValueAsString(status));
             sessions.removeIf(session -> {

@@ -34,9 +34,12 @@ Thumbs.db
 .env
 .env.local
 *.local.yml
+deploy/.env
 
 # 临时文件
 /tmp/
+a.txt
+return-control.patch
 
 # 临时文件
 *.json

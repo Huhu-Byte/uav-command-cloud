@@ -1,0 +1,18 @@
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  datasource:
+    url: ${UAV_DB_URL}
+    username: ${UAV_DB_USERNAME}
+    password: ${UAV_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+app:
+  cors:
+    allowed-origin-patterns: ${UAV_ALLOWED_ORIGIN_PATTERNS}
+  security:
+    demo-auth-enabled: ${UAV_DEMO_AUTH_ENABLED:false}

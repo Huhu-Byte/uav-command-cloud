@@ -1,0 +1,92 @@
+services:
+  # EMQX / Redis 等待 Docker Hub 网络恢复后解注并拉取镜像
+  # 届时使用: docker compose --profile dji up -d emqx redis
+  # emqx:
+  #   profiles: ["dji"]
+  #   image: emqx/emqx:5.7
+  #   restart: unless-stopped
+  #   environment:
+  #     - EMQX_ALLOW_ANONYMOUS=true
+  #   ports:
+  #     - "1883:1883"
+  #     - "8083:8083"
+  #     - "18083:18083"
+  #   networks:
+  #     - mqtt
+  #
+  # redis:
+  #   profiles: ["dji"]
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   networks:
+  #     - mqtt
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - database
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+    environment:
+      SPRING_PROFILES_ACTIVE: mysql
+      UAV_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      UAV_DB_USERNAME: ${MYSQL_USER}
+      UAV_DB_PASSWORD: ${MYSQL_PASSWORD}
+      UAV_ALLOWED_ORIGIN_PATTERNS: ${UAV_ALLOWED_ORIGIN_PATTERNS}
+      UAV_DEMO_AUTH_ENABLED: "false"
+      UAV_DJI_CLOUD_ENABLED: "true"
+      UAV_DJI_CLOUD_BASE_URL: ${UAV_DJI_CLOUD_BASE_URL}
+      UAV_DJI_CLOUD_CLIENT_ID: ${UAV_DJI_CLOUD_CLIENT_ID}
+      UAV_DJI_CLOUD_CLIENT_SECRET: ${UAV_DJI_CLOUD_KEY}
+      UAV_DJI_CLOUD_LICENSE: ${UAV_DJI_CLOUD_LICENSE}
+      UAV_DJI_MQTT_ENABLED: "false"
+      UAV_DJI_MQTT_BROKER_URL: wss://api.dji.com:8883
+      # 机场网关 SN 必须只由未纳入 Git 的环境变量注入。
+      UAV_DJI_MQTT_GATEWAY_SN: ${UAV_DJI_MQTT_GATEWAY_SN:-}
+      UAV_DJI_MQTT_CLIENT_ID: uav-command-backend
+      UAV_REDIS_HOST: redis
+      UAV_REDIS_PORT: "6379"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - database
+      - application
+
+  web:
+    build:
+      context: ../frontend
+    restart: unless-stopped
+    ports:
+      - "${UAV_WEB_PORT}:80"
+    depends_on:
+      - backend
+    networks:
+      - application
+
+volumes:
+  mysql-data:
+
+networks:
+  database:
+    internal: true
+  application:
