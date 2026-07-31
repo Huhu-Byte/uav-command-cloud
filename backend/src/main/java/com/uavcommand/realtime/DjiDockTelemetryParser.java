@@ -74,7 +74,11 @@ public class DjiDockTelemetryParser {
 
             this.lastOsdTopic = topic;
             this.lastOsdPayload = payload;
-            publisher.publish(snapshot);
+            if (publisher != null) {
+                publisher.publish(snapshot);
+            } else {
+                LOGGER.warn("publisher 未注入，OSD 快照无法推送 gatewaySn={}", gatewaySn);
+            }
         } catch (Exception e) { LOGGER.warn("OSD 解析失败 topic={}", topic, e); }
     }
 

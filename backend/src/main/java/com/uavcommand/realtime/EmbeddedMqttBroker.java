@@ -27,18 +27,24 @@ public class EmbeddedMqttBroker {
     private static final Logger LOGGER = LoggerFactory.getLogger(EmbeddedMqttBroker.class);
     private static final int DEFAULT_PORT = 1883;
 
+    private final DjiMqttProperties mqttProperties;
     private Server server;
+
+    public EmbeddedMqttBroker(DjiMqttProperties mqttProperties) {
+        this.mqttProperties = mqttProperties;
+    }
 
     @PostConstruct
     public void start() throws IOException {
+        int port = mqttProperties.getBrokerPort() > 0 ? mqttProperties.getBrokerPort() : DEFAULT_PORT;
         Properties props = new Properties();
-        props.setProperty("port", String.valueOf(DEFAULT_PORT));
+        props.setProperty("port", String.valueOf(port));
         props.setProperty("host", "0.0.0.0");
         props.setProperty("allow_anonymous", "true");
         IConfig config = new MemoryConfig(props);
         server = new Server();
         server.startServer(config);
-        LOGGER.info("内嵌 MQTT Broker (Moquette) 已启动 port={}", DEFAULT_PORT);
+        LOGGER.info("内嵌 MQTT Broker (Moquette) 已启动 port={}", port);
     }
 
     @PreDestroy
