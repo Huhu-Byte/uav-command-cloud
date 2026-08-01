@@ -64,3 +64,15 @@ app:
   redis:
     host: ${UAV_REDIS_HOST:localhost}
     port: ${UAV_REDIS_PORT:6379}
+  oss:
+    enabled: ${UAV_OSS_ENABLED:false}
+    provider: ${UAV_OSS_PROVIDER:minio}
+    endpoint: ${UAV_OSS_ENDPOINT:}
+    access-key: ${UAV_OSS_ACCESS_KEY:}
+    secret-key: ${UAV_OSS_SECRET_KEY:}
+    bucket: ${UAV_OSS_BUCKET:uav-command}
+    region: ${UAV_OSS_REGION:us-east-1}
+    wayline-prefix: ${UAV_OSS_WAYLINE_PREFIX:waylines}
+    media-prefix: ${UAV_OSS_MEDIA_PREFIX:media}
+    sts-expire-sec: ${UAV_OSS_STS_EXPIRE_SEC:3600}
+    public-endpoint: ${UAV_OSS_PUBLIC_ENDPOINT:}

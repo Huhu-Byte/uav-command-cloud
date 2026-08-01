@@ -11,7 +11,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 
 @Configuration
 @EnableWebSocket
-@EnableConfigurationProperties(DjiCloudApiProperties.class)
+@EnableConfigurationProperties({ DjiCloudApiProperties.class, DjiMqttProperties.class, OssProperties.class })
 public class RealtimeConfiguration implements WebSocketConfigurer {
     private final ObjectMapper objectMapper;
     private final String[] allowedOriginPatterns;

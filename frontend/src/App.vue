@@ -636,6 +636,16 @@ const routeValidateReport = ref(null)
 const allowUsedRouteModification = ref(false)
 const deleteConfirmOpen = ref(false)
 const deletingRouteId = ref(null)
+// ========== 航线下发状态 ==========
+const dispatchDialogOpen = ref(false)
+const dispatchSubmitting = ref(false)
+const dispatchMessage = ref('')
+const dispatchMessageType = ref('')
+const dispatchResult = ref(null)
+const dispatchForm = ref({
+  gatewaySn: 'DJI-DOCK-DEMO-001',
+  taskName: '',
+})
 
 const routeForm = ref({
   name: '',
@@ -901,6 +911,81 @@ async function confirmDeleteRoute() {
   } finally {
     deleteConfirmOpen.value = false
     deletingRouteId.value = null
+  }
+}
+
+// ========== 航线下发函数 ==========
+function openDispatchDialog() {
+  if (!selectedRouteId.value) {
+    routeSaveMessage.value = '请先选择或创建一条航线，再进行下发。'
+    routeSaveMessageType.value = 'error'
+    return
+  }
+  dispatchForm.value = {
+    gatewaySn: 'DJI-DOCK-DEMO-001',
+    taskName: selectedRoute.value ? `${selectedRoute.value.name} - ${new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')}` : '',
+  }
+  dispatchMessage.value = ''
+  dispatchMessageType.value = ''
+  dispatchResult.value = null
+  dispatchDialogOpen.value = true
+}
+
+function closeDispatchDialog() {
+  dispatchDialogOpen.value = false
+  dispatchMessage.value = ''
+  dispatchResult.value = null
+}
+
+async function submitDispatch() {
+  if (dispatchSubmitting.value) return
+  if (!selectedRouteId.value) {
+    dispatchMessage.value = '请先选择一条航线。'
+    dispatchMessageType.value = 'error'
+    return
+  }
+  if (!dispatchForm.value.gatewaySn?.trim()) {
+    dispatchMessage.value = '请填写机场网关 SN。'
+    dispatchMessageType.value = 'error'
+    return
+  }
+  dispatchSubmitting.value = true
+  dispatchMessage.value = ''
+  dispatchMessageType.value = ''
+  dispatchResult.value = null
+  try {
+    const result = await fetch(`${backendBaseUrl}/api/v1/flight-tasks/dispatch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...identityHeaders(),
+      },
+      body: JSON.stringify({
+        routeId: selectedRouteId.value,
+        gatewaySn: dispatchForm.value.gatewaySn.trim(),
+        taskName: dispatchForm.value.taskName?.trim() || null,
+      }),
+    })
+    if (!result.ok) {
+      const err = await result.json().catch(() => null)
+      throw new Error(err?.message || '下发失败，请稍后重试。')
+    }
+    const data = await result.json()
+    dispatchResult.value = data
+    if (data.overallSuccess) {
+      dispatchMessage.value = `✅ 航线任务下发成功！任务 ID：${data.flightId}，共 ${data.waypointCount} 个航点，耗时 ${data.durationMs}ms。`
+      dispatchMessageType.value = 'success'
+    } else {
+      dispatchMessage.value = `⚠ 下发部分失败。任务 ID：${data.flightId}。请检查 create/prepare/execute 各步骤结果。`
+      dispatchMessageType.value = 'error'
+    }
+    // 刷新任务列表
+    try { await loadTasks() } catch (_) { /* ignore */ }
+  } catch (error) {
+    dispatchMessage.value = error.message
+    dispatchMessageType.value = 'error'
+  } finally {
+    dispatchSubmitting.value = false
   }
 }
 
@@ -1334,6 +1419,13 @@ onBeforeUnmount(() => {
                     :disabled="routeSubmitting || !canControl"
                     @click="saveCurrentRoute"
                   >{{ routeSubmitting ? '保存中…' : selectedRouteId ? '保存修改' : '创建航线' }}</button>
+                  <button
+                    v-if="selectedRouteId"
+                    type="button"
+                    :disabled="!canControl || routeSubmitting"
+                    @click="openDispatchDialog"
+                    style="margin-left: 8px; background: linear-gradient(135deg, #0ea5e9, #2563eb); border-color: #2563eb;"
+                  >🚀 下发到机场</button>
                 </div>
                 <p v-if="!canControl" class="permission-hint">当前身份：{{ identityLabel }}。请切换为飞行操作员或管理员后编辑航线。</p>
               </div>
@@ -1412,6 +1504,49 @@ onBeforeUnmount(() => {
         <div><dt>关联任务</dt><dd>{{ selectedRoute.usedInTasks }} 个</dd></div>
       </dl>
       <div class="confirmation-actions"><button type="button" @click="cancelDelete">取消</button><button type="button" class="danger" @click="confirmDeleteRoute">确认删除</button></div>
+    </section>
+  </div>
+
+  <!-- 航线下发对话框 -->
+  <div v-if="dispatchDialogOpen" class="dialog-backdrop" @click.self="closeDispatchDialog">
+    <section class="form-dialog" role="dialog" aria-modal="true" aria-labelledby="dispatch-dialog-title">
+      <div class="dialog-heading"><div><p class="section-label">FLIGHT TASK DISPATCH</p><h2 id="dispatch-dialog-title">下发航线到机场</h2></div><button type="button" aria-label="关闭" @click="closeDispatchDialog">×</button></div>
+      <p class="dialog-intro">后端会自动完成：生成 KMZ → 上传对象存储 → MQTT 三步下发（create/prepare/execute）。未连接真实机场时会自动走 Mock 流程。</p>
+      <form class="task-form" @submit.prevent="submitDispatch">
+        <dl v-if="selectedRoute" style="background:#f8fafc; border-radius:12px; padding:16px; margin:0 0 16px;">
+          <div><dt>当前航线</dt><dd>{{ selectedRoute.name }}</dd></div>
+          <div><dt>所属区域</dt><dd>{{ selectedRoute.area }}</dd></div>
+          <div><dt>航点数量</dt><dd>{{ selectedRoute.waypointCount }} 个</dd></div>
+        </dl>
+        <label>机场网关 SN
+          <input v-model="dispatchForm.gatewaySn" maxlength="100" placeholder="例如：DJI-DOCK-001、1581F6EQD20XXXX" />
+        </label>
+        <label>任务名称（可选）
+          <input v-model="dispatchForm.taskName" maxlength="80" placeholder="留空则默认使用航线名称" />
+        </label>
+        <p v-if="dispatchMessage" :class="['form-message', dispatchMessageType]" aria-live="polite">{{ dispatchMessage }}</p>
+        <div v-if="dispatchResult" class="validate-report">
+          <p class="validate-summary ok">
+            📦 下发流程概览
+            <span>KMZ：{{ (dispatchResult.kmzSizeBytes/1024).toFixed(1) }} KB · 指纹：{{ dispatchResult.fingerprint?.substring(0,12) }}...</span>
+          </p>
+          <ul class="validate-errors" style="list-style:none; padding:0;">
+            <li :style="{ color: dispatchResult.create?.success ? '#10b981' : '#ef4444' }">
+              <b>① flighttask_create：</b>{{ dispatchResult.create?.success ? '✅ 成功' : (dispatchResult.create?.error || '❌ 失败') }}
+            </li>
+            <li :style="{ color: dispatchResult.prepare?.success ? '#10b981' : '#f59e0b' }">
+              <b>② flighttask_prepare：</b>{{ dispatchResult.prepare?.success ? '✅ 成功' : (dispatchResult.prepare?.error || '⏳ 跳过') }}
+            </li>
+            <li :style="{ color: dispatchResult.execute?.success ? '#10b981' : '#f59e0b' }">
+              <b>③ flighttask_execute：</b>{{ dispatchResult.execute?.success ? '✅ 成功' : (dispatchResult.execute?.error || '⏳ 跳过') }}
+            </li>
+          </ul>
+          <p v-if="dispatchResult.kmzUrl" style="font-size:12px; color:#64748b; word-break:break-all; margin:8px 0 0;">
+            KMZ 下载地址：<a :href="dispatchResult.kmzUrl" target="_blank" rel="noopener">点击预览</a>
+          </p>
+        </div>
+        <div class="dialog-actions"><button type="button" :disabled="dispatchSubmitting" @click="closeDispatchDialog">关闭</button><button type="submit" class="primary" :disabled="dispatchSubmitting">{{ dispatchSubmitting ? '正在下发…' : '确认下发' }}</button></div>
+      </form>
     </section>
   </div>
 </template>

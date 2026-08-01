@@ -41,17 +41,20 @@ public class DjiMqttConfiguration {
     private final DjiDockTelemetryParser telemetryParser;
     private final DjiDockHandshakeService handshakeService;
     private final DjiDockTopologyRegistry topologyRegistry;
+    private final DjiMqttCommandPublisher mqttCommandPublisher;
     private final ApplicationContext applicationContext;
 
     public DjiMqttConfiguration(DjiMqttProperties properties,
                                  DjiDockTelemetryParser telemetryParser,
                                  DjiDockHandshakeService handshakeService,
                                  DjiDockTopologyRegistry topologyRegistry,
+                                 DjiMqttCommandPublisher mqttCommandPublisher,
                                  ApplicationContext applicationContext) {
         this.properties = properties;
         this.telemetryParser = telemetryParser;
         this.handshakeService = handshakeService;
         this.topologyRegistry = topologyRegistry;
+        this.mqttCommandPublisher = mqttCommandPublisher;
         this.applicationContext = applicationContext;
     }
 
@@ -103,13 +106,15 @@ public class DjiMqttConfiguration {
             "thing/product/" + gatewaySn + "/state",
             "thing/product/" + gatewaySn + "/events",
             "thing/product/" + gatewaySn + "/requests",
-            "sys/product/" + gatewaySn + "/status"
+            "sys/product/" + gatewaySn + "/status",
+            "thing/product/" + gatewaySn + "/services_reply",
+            "thing/product/" + gatewaySn + "/property/set_reply"
         };
         MqttPahoMessageDrivenChannelAdapter adapter = new MqttPahoMessageDrivenChannelAdapter(
                 clientId, mqttClientFactory(), topics);
         adapter.setCompletionTimeout(properties.getConnectTimeoutMs());
         adapter.setConverter(new DefaultPahoMessageConverter());
-        adapter.setQos(new int[]{0, 0, 1, 0, 0});
+        adapter.setQos(new int[]{0, 0, 1, 0, 0, 0, 0});
         adapter.setOutputChannel(mqttInputChannel());
         LOGGER.info("MQTT 入站通道已创建 gatewaySn={} topics={}", gatewaySn, java.util.Arrays.toString(topics));
         return adapter;
@@ -140,6 +145,8 @@ public class DjiMqttConfiguration {
                     else if (topic.endsWith("/events"))    telemetryParser.parseEvent(topic, payload);
                     else if (topic.endsWith("/requests"))  handleRequestMessage(topic, payload);
                     else if (topic.endsWith("/status"))    handleStatusMessage(topic, payload);
+                    else if (topic.endsWith("/services_reply"))   handleServicesReply(topic, payload);
+                    else if (topic.endsWith("/property/set_reply")) handlePropertySetReply(topic, payload);
                 } catch (Exception e) {
                     LOGGER.warn("MQTT 消息处理失败 topic={}", topic, e);
                 }
@@ -248,6 +255,32 @@ public class DjiMqttConfiguration {
             LOGGER.debug("应答已发送 topic={}", replyTopic);
         } catch (Exception e) {
             LOGGER.error("应答发送失败 topic={}", replyTopic, e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleServicesReply(String topic, String payload) {
+        try {
+            Map<String, Object> root = MAPPER.readValue(payload, Map.class);
+            String tid = (String) root.get("tid");
+            if (tid != null) {
+                mqttCommandPublisher.onServicesReply(tid, root);
+            }
+        } catch (Exception e) {
+            LOGGER.warn("services_reply 解析失败 topic={}", topic, e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handlePropertySetReply(String topic, String payload) {
+        try {
+            Map<String, Object> root = MAPPER.readValue(payload, Map.class);
+            String tid = (String) root.get("tid");
+            if (tid != null) {
+                mqttCommandPublisher.onPropertySetReply(tid, root);
+            }
+        } catch (Exception e) {
+            LOGGER.warn("property/set_reply 解析失败 topic={}", topic, e);
         }
     }
 
