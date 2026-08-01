@@ -14,7 +14,7 @@ class DjiDockTelemetryParserTest {
     void setUp() {
         topologyRegistry = new DjiDockTopologyRegistry();
         publisher = null;
-        parser = new DjiDockTelemetryParser(topologyRegistry, publisher);
+        parser = new DjiDockTelemetryParser(topologyRegistry, publisher, null);
     }
 
     @Test

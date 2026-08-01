@@ -66,7 +66,8 @@ public class FlightTaskDispatchService {
         // 步骤 1：生成 KMZ
         WaylineFileGenerator.GenerateResult kmz;
         try {
-            kmz = waylineFileGenerator.generateKmz(flightId, route.name(), route.waypointsJson());
+            String waypointsJson = flightRouteService.toJson(route.waypoints());
+            kmz = waylineFileGenerator.generateKmz(flightId, route.name(), waypointsJson);
         } catch (Exception e) {
             LOGGER.error("生成 KMZ 失败 routeId={}", routeId, e);
             throw new RuntimeException("生成航线文件失败：" + e.getMessage(), e);

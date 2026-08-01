@@ -128,6 +128,11 @@ public class DjiMqttCommandPublisher {
 
     /** 发布 services 指令并等待 services_reply。超时返回异常，结果包含 data 层（DJI 规范中 code=0 表示成功）。 */
     public Map<String, Object> publishServiceAndWait(String gatewaySn, String method, Map<String, Object> data) {
+        // MQTT 未启用时直接返回 Mock 成功，避免等待超时
+        if (!mqttProperties.isEnabled()) {
+            LOGGER.info("[MQTT DISABLED] mock services method={} gatewaySn={}", method, gatewaySn);
+            return Map.of("code", 0, "message", "success", "data", Map.of("mock", true));
+        }
         String tid = UUID.randomUUID().toString().replace("-", "");
         Map<String, Object> wrapper = Map.of(
                 "tid", tid,

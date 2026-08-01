@@ -202,13 +202,14 @@ let reconnectTimer
 let clockTimer
 
 const backendBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1/dashboard'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace('/dashboard', '') || '/api/v1'
 const realtimeServiceUrl = import.meta.env.VITE_WS_URL
   || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/drone-status`
 
 function identityHeaders() {
   if (!activeAccount.value) return {}
   return {
-    'X-Demo-User': activeAccount.value.name,
+    'X-Demo-User': encodeURIComponent(activeAccount.value.name),
     'X-Demo-Role': activeAccount.value.role,
   }
 }
@@ -962,7 +963,7 @@ async function submitDispatch() {
   dispatchMessageType.value = ''
   dispatchResult.value = null
   try {
-    const result = await fetch(`${backendBaseUrl}/api/v1/flight-tasks/dispatch`, {
+    const result = await fetch(`${apiBaseUrl}/flight-tasks/dispatch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1003,7 +1004,7 @@ async function callDeviceControl(endpoint, body, label) {
   deviceControlLoading.value = true
   deviceControlMessage.value = ''
   try {
-    const result = await fetch(`${backendBaseUrl}/api/v1/flight-tasks${endpoint}`, {
+    const result = await fetch(`${apiBaseUrl}/flight-tasks${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...identityHeaders() },
       body: JSON.stringify(body),
@@ -1053,7 +1054,7 @@ function controlEmergencyRelease() {
 async function loadMediaFiles() {
   mediaLoading.value = true
   try {
-    const data = await fetch(`${backendBaseUrl}/api/v1/media`).then((r) => r.json())
+    const data = await fetch(`${apiBaseUrl}/media`).then((r) => r.json())
     mediaFiles.value = Array.isArray(data) ? data : []
   } catch {
     mediaFiles.value = []
@@ -1195,7 +1196,7 @@ onBeforeUnmount(() => {
           <dl><div><dt>设备类型</dt><dd>行业巡检无人机</dd></div><div><dt>连接状态</dt><dd>{{ selectedDevice.connectionStatus === 'OFFLINE' ? '离线' : '在线' }}</dd></div><div><dt>当前电量</dt><dd>{{ selectedDevice.battery }}%</dd></div><div><dt>固件状态</dt><dd>版本正常</dd></div><div><dt>最近任务</dt><dd>{{ selectedDevice.name.includes('02') ? '园区东侧例行巡检' : '暂无执行中任务' }}</dd></div><div><dt>维护建议</dt><dd>{{ selectedDevice.status === '离线' ? '检查设备供电与网络连接' : '当前无需维护' }}</dd></div></dl>
 
           <!-- 设备控制面板 -->
-          <div class="device-control-panel" v-if="canControl">
+          <div class="device-control-panel" v-if="['FLIGHT_OPERATOR', 'ADMIN'].includes(activeAccount?.role)">
             <p class="section-label">DEVICE CONTROL</p>
             <h3>远程控制</h3>
             <label class="control-gateway-input">机场网关 SN
@@ -1520,7 +1521,7 @@ onBeforeUnmount(() => {
                   <button
                     v-if="selectedRouteId"
                     type="button"
-                    :disabled="!canControl || routeSubmitting"
+                    :disabled="routeSubmitting"
                     @click="openDispatchDialog"
                     style="margin-left: 8px; background: linear-gradient(135deg, #0ea5e9, #2563eb); border-color: #2563eb;"
                   >🚀 下发到机场</button>
