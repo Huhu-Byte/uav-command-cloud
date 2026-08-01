@@ -22,7 +22,7 @@ import io.moquette.broker.config.MemoryConfig;
  * 端口改从 DjiMqttProperties.brokerPort 读取，不再硬编码 1883。</p>
  */
 @Component
-@ConditionalOnProperty(name = "app.dji-mqtt.embedded-broker", havingValue = "true")
+@ConditionalOnProperty(name = "app.dji-mqtt.embedded-broker-provider", havingValue = "moquette")
 public class EmbeddedMqttBroker {
     private static final Logger LOGGER = LoggerFactory.getLogger(EmbeddedMqttBroker.class);
     private static final int DEFAULT_PORT = 1884;
@@ -40,8 +40,9 @@ public class EmbeddedMqttBroker {
         Properties props = new Properties();
         props.setProperty("port", String.valueOf(port));
         props.setProperty("host", "0.0.0.0");
-        props.setProperty("allow_anonymous", "true");
-        IConfig config = new MemoryConfig(props);
+       props.setProperty("allow_anonymous", "true");
+        props.setProperty("allow_zero_byte_client_id", "true");
+       IConfig config = new MemoryConfig(props);
         server = new Server();
         server.startServer(config);
         LOGGER.info("内嵌 MQTT Broker (Moquette) 已启动 port={}", port);

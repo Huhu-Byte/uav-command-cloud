@@ -29,10 +29,14 @@ public class DjiCloudApiClient {
 
     public Readiness readiness() {
         // 修复问题5a：从 DjiMqttProperties 读取真实 MQTT 配置，不再硬编码 false/null
-        MqttStatus mqtt = new MqttStatus(
-                mqttProperties.isEnabled(),
-                mqttProperties.isEnabled() ? mqttProperties.getBrokerUrl() : null
-        );
+       MqttStatus mqtt = new MqttStatus(
+               mqttProperties.isEnabled(),
+                mqttProperties.isEnabled() ? mqttProperties.getBrokerUrl() : null,
+                mqttProperties.isHandshakeEnabled(),
+                mqttProperties.getGatewaySn(),
+                mqttProperties.isEmbeddedBroker(),
+                mqttProperties.getBrokerPort()
+       );
         if (!properties.isEnabled()) {
             return new Readiness(false, false, "真实 DJI Cloud API 尚未启用，系统继续使用本机模拟器", 0, 0, 0, mqtt);
         }
@@ -169,5 +173,12 @@ public class DjiCloudApiClient {
             MqttStatus mqtt
     ) { }
 
-    public record MqttStatus(boolean enabled, String brokerUrl) { }
+    public record MqttStatus(
+            boolean enabled,
+            String brokerUrl,
+            boolean handshakeEnabled,
+            String gatewaySn,
+            boolean embeddedBroker,
+            int brokerPort
+    ) { }
 }

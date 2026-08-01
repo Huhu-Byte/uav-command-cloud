@@ -18,6 +18,9 @@ public class DjiMqttProperties {
     private String deviceBindingCode = "";
     /** 内嵌 Broker 监听端口，0 表示使用默认 1883。 */
     private int brokerPort = 0;
+    private boolean embeddedBroker;
+    private volatile boolean connected;
+    private volatile String lastError = "";
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -43,4 +46,10 @@ public class DjiMqttProperties {
     public void setDeviceBindingCode(String deviceBindingCode) { this.deviceBindingCode = deviceBindingCode == null ? "" : deviceBindingCode.trim(); }
     public int getBrokerPort() { return brokerPort; }
     public void setBrokerPort(int brokerPort) { this.brokerPort = brokerPort; }
+    public boolean isEmbeddedBroker() { return embeddedBroker; }
+    public void setEmbeddedBroker(boolean embeddedBroker) { this.embeddedBroker = embeddedBroker; }
+    public boolean isConnected() { return connected; }
+    public void setConnected(boolean connected) { this.connected = connected; }
+    public String getLastError() { return lastError; }
+    public void setLastError(String lastError) { this.lastError = lastError == null ? "" : lastError.trim(); }
 }

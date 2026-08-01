@@ -35,6 +35,22 @@ Thumbs.db
 .env.local
 *.local.yml
 deploy/.env
+backend/.env
+frontend/.env
+
+# 后端本地数据库 / MQTT 存储
+backend/data/
+*.h2
+*.mv.db
+*.trace.db
+
+# Docker 数据卷（本地挂载目录）
+deploy/volumes/
+deploy/data/
+deploy/mysql/
+deploy/mysql-data/
+deploy/redis/
+deploy/redis-data/
 
 # 临时文件
 /tmp/

@@ -126,10 +126,16 @@ public class DjiMqttConfiguration {
         mqttInputChannel().subscribe(new MessageHandler() {
             @Override
             public void handleMessage(org.springframework.messaging.Message<?> message) {
-                String topic = (String) message.getHeaders().get("mqtt_receivedTopic");
-                Object raw = message.getPayload();
-                String payload = raw instanceof String s ? s : null;
-                if (topic == null || payload == null) return;
+               String topic = (String) message.getHeaders().get("mqtt_receivedTopic");
+               Object raw = message.getPayload();
+               String payload = raw instanceof String s ? s : null;
+                if (topic == null || payload == null) {
+                    LOGGER.debug("MQTT 消息类型不匹配 topic={} rawClass={}", topic, raw != null ? raw.getClass().getSimpleName() : "null");
+                    return;
+                }
+                if (topic.endsWith("/osd")) {
+                    LOGGER.info("MQTT OSD 到达 topic={} payloadLength={} payloadStart={}", topic, payload.length(), payload.substring(0, Math.min(payload.length(), 20)));
+                }
                 try {
                     if (topic.endsWith("/osd"))       telemetryParser.parseOsd(topic, payload);
                     else if (topic.endsWith("/state"))     telemetryParser.parseState(topic, payload);
