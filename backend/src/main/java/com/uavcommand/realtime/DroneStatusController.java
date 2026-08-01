@@ -21,6 +21,7 @@ public class DroneStatusController {
     private final DjiCloudApiClient djiCloudApiClient;
     private final InspectionTaskService inspectionTaskService;
     private final InspectionResultService inspectionResultService;
+    private final FlightRouteService flightRouteService;
 
     public DroneStatusController(
             DroneStatusService droneStatusService,
@@ -29,7 +30,8 @@ public class DroneStatusController {
             ActivityHistoryService activityHistoryService,
             DjiCloudApiClient djiCloudApiClient,
             InspectionTaskService inspectionTaskService,
-            InspectionResultService inspectionResultService
+            InspectionResultService inspectionResultService,
+            FlightRouteService flightRouteService
     ) {
         this.droneStatusService = droneStatusService;
         this.webSocketHandler = webSocketHandler;
@@ -38,6 +40,7 @@ public class DroneStatusController {
         this.djiCloudApiClient = djiCloudApiClient;
         this.inspectionTaskService = inspectionTaskService;
         this.inspectionResultService = inspectionResultService;
+        this.flightRouteService = flightRouteService;
     }
 
     @GetMapping("/status")
@@ -135,6 +138,78 @@ public class DroneStatusController {
             return activityHistoryService.history(type, result);
         } catch (IllegalArgumentException error) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error.getMessage(), error);
+        }
+    }
+
+    @GetMapping("/routes")
+    public java.util.List<FlightRouteService.RouteView> routes() {
+        return flightRouteService.list();
+    }
+
+    @GetMapping("/routes/{id}")
+    public FlightRouteService.RouteView routeDetail(@org.springframework.web.bind.annotation.PathVariable Long id) {
+        try {
+            return flightRouteService.get(id);
+        } catch (IllegalArgumentException error) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, error.getMessage(), error);
+        }
+    }
+
+    @PostMapping("/routes/validate")
+    public FlightRouteService.ValidateReport validateRoute(@RequestBody FlightRouteService.CreateRouteRequest request) {
+        return flightRouteService.validateRoute(request);
+    }
+
+    @PostMapping("/routes")
+    public FlightRouteService.RouteView createRoute(
+            @RequestHeader(name = "X-Demo-User", required = false) String userName,
+            @RequestHeader(name = "X-Demo-Role", required = false) String role,
+            @RequestBody FlightRouteService.CreateRouteRequest request
+    ) {
+        try {
+            String operator = demoAuthorizationService.requireControlOperator(userName, role);
+            return flightRouteService.create(operator, request);
+        } catch (SecurityException error) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, error.getMessage(), error);
+        } catch (IllegalArgumentException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error.getMessage(), error);
+        }
+    }
+
+    @PutMapping("/routes/{id}")
+    public FlightRouteService.RouteView updateRoute(
+            @org.springframework.web.bind.annotation.PathVariable Long id,
+            @RequestHeader(name = "X-Demo-User", required = false) String userName,
+            @RequestHeader(name = "X-Demo-Role", required = false) String role,
+            @RequestBody FlightRouteService.CreateRouteRequest request
+    ) {
+        try {
+            String operator = demoAuthorizationService.requireControlOperator(userName, role);
+            return flightRouteService.update(id, operator, request);
+        } catch (SecurityException error) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, error.getMessage(), error);
+        } catch (IllegalArgumentException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error.getMessage(), error);
+        } catch (IllegalStateException error) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, error.getMessage(), error);
+        }
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/routes/{id}")
+    public void deleteRoute(
+            @org.springframework.web.bind.annotation.PathVariable Long id,
+            @RequestHeader(name = "X-Demo-User", required = false) String userName,
+            @RequestHeader(name = "X-Demo-Role", required = false) String role
+    ) {
+        try {
+            demoAuthorizationService.requireControlOperator(userName, role);
+            flightRouteService.delete(id);
+        } catch (SecurityException error) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, error.getMessage(), error);
+        } catch (IllegalArgumentException error) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, error.getMessage(), error);
+        } catch (IllegalStateException error) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, error.getMessage(), error);
         }
     }
 

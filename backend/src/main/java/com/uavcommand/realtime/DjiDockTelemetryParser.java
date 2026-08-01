@@ -30,6 +30,8 @@ public class DjiDockTelemetryParser {
     private final DjiDockTopologyRegistry topologyRegistry;
     private final RealtimeStatusPublisher publisher;
     private final Map<String, String> deviceStates = new ConcurrentHashMap<>();
+    /** OSD 数据缓存：gatewaySn:dock / gatewaySn:aircraft → 最新 OSD data。 */
+    private final Map<String, Map<String, Object>> osdCache = new ConcurrentHashMap<>();
     private final List<TimestampedAlert> activeAlerts = Collections.synchronizedList(new ArrayList<>());
     private volatile String lastOsdTopic;
     private volatile String lastOsdPayload;
@@ -46,27 +48,89 @@ public class DjiDockTelemetryParser {
             Map<String, Object> data = (Map<String, Object>) root.get("data");
             if (data == null) { LOGGER.warn("OSD 报文缺少 data 层 topic={}", topic); return; }
             String gatewaySn = extractSn(topic);
-            double lat = getDouble(data, "latitude", -91);
-            double lng = getDouble(data, "longitude", -181);
-            double alt = getDouble(data, "altitude", -1);
-            int battery = (int) getDouble(data, "battery", -1);
-            if (lat < -90 || lat > 90 || lng < -180 || lng > 180 || alt < 0 || battery < 0) {
-                LOGGER.warn("OSD 网关遥测值超出范围 gatewaySn={}", gatewaySn); return;
-            }
+
+            // DJI OSD 通过 from 字段区分设备类型：0=机场, 1=无人机
+            int from = (int) getDouble(data, "from", 0);
+            boolean isAircraft = (from == 1);
+
+            // 缓存最新 OSD 数据（区分机场和无人机）
+            String cacheKey = gatewaySn + (isAircraft ? ":aircraft" : ":dock");
+            osdCache.put(cacheKey, data);
 
             String now = Instant.now().toString();
-            List<RealtimeStatusSnapshot.DeviceState> devices = List.of(
-                new RealtimeStatusSnapshot.DeviceState(gatewaySn, "Dock " + gatewaySn, "ONLINE",
-                    deviceStates.getOrDefault(gatewaySn, "IDLE"), battery, (int) alt, now)
-            );
+            List<RealtimeStatusSnapshot.DeviceState> devices = new ArrayList<>();
+
+            // 构建机场设备状态
+            Map<String, Object> dockData = osdCache.get(gatewaySn + ":dock");
+            if (dockData != null) {
+                int dockBattery = (int) getDouble(dockData, "battery", -1);
+                double dockLat = getDouble(dockData, "latitude", -91);
+                double dockLng = getDouble(dockData, "longitude", -181);
+                String dockMode = mapDockModeCode((int) getDouble(dockData, "mode_code", 0));
+                String coverState = String.valueOf(dockData.getOrDefault("cover_state", "0"));
+                String droneCharge = String.valueOf(dockData.getOrDefault("drone_charge_state", "0"));
+                String dockStatus = "1".equals(droneCharge) ? "充电中" : "1".equals(coverState) ? "舱盖已打开" : dockMode;
+
+                deviceStates.put(gatewaySn, dockStatus);
+                devices.add(new RealtimeStatusSnapshot.DeviceState(
+                    gatewaySn, "Dock " + gatewaySn, "ONLINE",
+                    dockStatus, Math.max(dockBattery, 0), 0, now
+                ));
+            }
+
+            // 构建无人机设备状态
+            Map<String, Object> aircraftData = osdCache.get(gatewaySn + ":aircraft");
+            if (aircraftData != null) {
+                double lat = getDouble(aircraftData, "latitude", -91);
+                double lng = getDouble(aircraftData, "longitude", -181);
+                double alt = getDouble(aircraftData, "height", getDouble(aircraftData, "altitude", -1));
+                int battery = (int) getDouble(aircraftData, "battery", -1);
+                double speed = getDouble(aircraftData, "horizontal_speed", getDouble(aircraftData, "speed", 0));
+                int modeCode = (int) getDouble(aircraftData, "mode_code", 0);
+                String aircraftSn = (String) aircraftData.getOrDefault("sn", gatewaySn + "-aircraft");
+                String flightState = mapFlightMode(String.valueOf(modeCode));
+
+                if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                    deviceStates.put(aircraftSn, flightState);
+                    devices.add(new RealtimeStatusSnapshot.DeviceState(
+                        aircraftSn, "Aircraft " + aircraftSn, "ONLINE",
+                        flightState, Math.max(battery, 0), Math.max((int) alt, 0), now
+                    ));
+                }
+            }
+
+            // 如果没有任何缓存数据，至少用当前报文构建一条
+            if (devices.isEmpty()) {
+                double lat = getDouble(data, "latitude", -91);
+                double lng = getDouble(data, "longitude", -181);
+                double alt = getDouble(data, "altitude", -1);
+                int battery = (int) getDouble(data, "battery", -1);
+                if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                    devices.add(new RealtimeStatusSnapshot.DeviceState(
+                        gatewaySn, (isAircraft ? "Aircraft " : "Dock ") + gatewaySn, "ONLINE",
+                        deviceStates.getOrDefault(gatewaySn, "IDLE"), Math.max(battery, 0), Math.max((int) alt, 0), now
+                    ));
+                }
+            }
+
+            if (devices.isEmpty()) {
+                LOGGER.warn("OSD 无有效设备数据 gatewaySn={}", gatewaySn);
+                return;
+            }
+
+            // 取无人机的飞行数据作为任务状态（如果有）
+            Map<String, Object> missionData = aircraftData != null ? aircraftData : data;
+            double missionAlt = getDouble(missionData, "height", getDouble(missionData, "altitude", 0));
+            double missionSpeed = getDouble(missionData, "horizontal_speed", getDouble(missionData, "speed", 0));
+            String speedDisplay = missionSpeed > 0 ? String.format("%.1f m/s", missionSpeed) : "--";
 
             RealtimeStatusSnapshot snapshot = new RealtimeStatusSnapshot(
                 RealtimeStatusSnapshot.SCHEMA_VERSION,
                 new RealtimeStatusSnapshot.SourceMetadata("dji-dock", gatewaySn, "DJI Dock 3", now),
                 now,
                 60,
-                new RealtimeStatusSnapshot.MissionStatus("", "", "EXECUTING", gatewaySn, 0, 0, 0, (int) alt, "--"),
-                new RealtimeStatusSnapshot.DashboardSummary(1, 0, 0, 0),
+                new RealtimeStatusSnapshot.MissionStatus("", "", "EXECUTING", gatewaySn, 0, 0, 0, (int) missionAlt, speedDisplay),
+                new RealtimeStatusSnapshot.DashboardSummary(devices.size(), 0, 0, 0),
                 devices,
                 currentAlerts(),
                 new RealtimeStatusSnapshot.ControlCommand("", "", "IDLE", gatewaySn, "待命", "", 0, null)
@@ -193,6 +257,16 @@ public class DjiDockTelemetryParser {
             case "4" -> "悬停中";
             case "5" -> "返航中";
             default  -> "飞行模式:" + mode;
+        };
+    }
+
+    /** 映射机场 mode_code 到中文状态。 */
+    private String mapDockModeCode(int modeCode) {
+        return switch (modeCode) {
+            case 0  -> "待机";
+            case 1  -> "远程调试";
+            case 2  -> "本地调试";
+            default -> "机场模式:" + modeCode;
         };
     }
 

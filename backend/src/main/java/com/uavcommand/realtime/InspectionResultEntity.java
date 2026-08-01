@@ -30,6 +30,10 @@ public class InspectionResultEntity {
     private String location;
     @Column(name = "result_status", nullable = false, length = 20)
     private String status;
+    @Column(name = "workspace_id")
+    private Long workspaceId = 1L;
+    @Column(name = "media_source", length = 50)
+    private String mediaSource = "LOCAL_CATALOG";
 
     protected InspectionResultEntity() { }
 
@@ -51,4 +55,6 @@ public class InspectionResultEntity {
     public LocalDateTime getCapturedAt() { return capturedAt; }
     public String getLocation() { return location; }
     public String getStatus() { return status; }
+    public Long getWorkspaceId() { return workspaceId; }
+    public String getMediaSource() { return mediaSource; }
 }

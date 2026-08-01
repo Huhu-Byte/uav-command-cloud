@@ -6,7 +6,10 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.ApplicationContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.mqtt.core.DefaultMqttPahoClientFactory;
 import org.springframework.integration.mqtt.core.MqttPahoClientFactory;
@@ -38,18 +41,22 @@ public class DjiMqttConfiguration {
     private final DjiDockTelemetryParser telemetryParser;
     private final DjiDockHandshakeService handshakeService;
     private final DjiDockTopologyRegistry topologyRegistry;
+    private final ApplicationContext applicationContext;
 
     public DjiMqttConfiguration(DjiMqttProperties properties,
                                  DjiDockTelemetryParser telemetryParser,
                                  DjiDockHandshakeService handshakeService,
-                                 DjiDockTopologyRegistry topologyRegistry) {
+                                 DjiDockTopologyRegistry topologyRegistry,
+                                 ApplicationContext applicationContext) {
         this.properties = properties;
         this.telemetryParser = telemetryParser;
         this.handshakeService = handshakeService;
         this.topologyRegistry = topologyRegistry;
+        this.applicationContext = applicationContext;
     }
 
     @Bean
+    @Conditional(DjiMqttEnabledCondition.class)
     public MqttPahoClientFactory mqttClientFactory() {
         DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
         MqttConnectOptions options = new MqttConnectOptions();
@@ -69,13 +76,9 @@ public class DjiMqttConfiguration {
     }
 
     @Bean
+    @Conditional(DjiMqttEnabledCondition.class)
     public MqttPahoMessageHandler mqttOutbound() {
-        if (!properties.isEnabled()) return null;
         String gatewaySn = properties.getGatewaySn();
-        if (gatewaySn.isBlank()) {
-            LOGGER.warn("DJI MQTT 未配置网关 SN，出站通道不创建");
-            return null;
-        }
         String clientId = properties.getClientId().isBlank()
                 ? "uav-command-" + gatewaySn + "-outbound"
                 : properties.getClientId() + "-outbound";
@@ -84,20 +87,14 @@ public class DjiMqttConfiguration {
         handler.setAsync(true);
         handler.setAsyncEvents(true);
         handler.setConverter(new DefaultPahoMessageConverter());
+        LOGGER.info("MQTT 出站通道已创建 gatewaySn={}", gatewaySn);
         return handler;
     }
 
     @Bean
+    @Conditional(DjiMqttEnabledCondition.class)
     public MqttPahoMessageDrivenChannelAdapter mqttInbound() {
-        if (!properties.isEnabled()) {
-            LOGGER.info("DJI MQTT 未启用");
-            return null;
-        }
         String gatewaySn = properties.getGatewaySn();
-        if (gatewaySn.isBlank()) {
-            LOGGER.warn("DJI MQTT 未配置网关 SN，入站通道不创建");
-            return null;
-        }
         String clientId = properties.getClientId().isBlank()
                 ? "uav-command-" + gatewaySn + "-inbound"
                 : properties.getClientId() + "-inbound";
@@ -114,13 +111,14 @@ public class DjiMqttConfiguration {
         adapter.setConverter(new DefaultPahoMessageConverter());
         adapter.setQos(new int[]{0, 0, 1, 0, 0});
         adapter.setOutputChannel(mqttInputChannel());
+        LOGGER.info("MQTT 入站通道已创建 gatewaySn={} topics={}", gatewaySn, java.util.Arrays.toString(topics));
         return adapter;
     }
 
     @PostConstruct
     public void startMqttRouter() {
-        if (mqttInbound() == null) {
-            LOGGER.info("DJI MQTT 未启用，跳过消息路由");
+        if (!applicationContext.containsBean("mqttInbound")) {
+            LOGGER.info("DJI MQTT 未启用或未配置网关 SN，跳过消息路由");
             return;
         }
         mqttInputChannel().subscribe(new MessageHandler() {
@@ -234,7 +232,7 @@ public class DjiMqttConfiguration {
     // ── 出站应答 ──────────────────────────────────────────────────────────
 
     private void publishReply(String requestTopic, String replyPayload) {
-        if (mqttOutbound() == null) {
+        if (!applicationContext.containsBean("mqttOutbound")) {
             LOGGER.warn("MQTT 出站未就绪，应答未发送");
             return;
         }
@@ -242,7 +240,8 @@ public class DjiMqttConfiguration {
                 .replaceFirst("/requests$", "/requests_reply")
                 .replaceFirst("/status$", "/status_reply");
         try {
-            mqttOutbound().handleMessage(
+            MqttPahoMessageHandler outbound = applicationContext.getBean(MqttPahoMessageHandler.class);
+            outbound.handleMessage(
                     MessageBuilder.withPayload(replyPayload)
                             .setHeader("mqtt_topic", replyTopic)
                             .build());

@@ -32,7 +32,7 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "app.dji-mqtt.embedded-broker", havingValue = "true")
 public class MosquittoProcessManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(MosquittoProcessManager.class);
-    private static final String MOSQUITTO_EXE = "C:\\Program Files\\Mosquitto\\mosquitto.exe";
+    private static final String DEFAULT_MOSQUITTO_PATH = "C:\\Program Files\\Mosquitto\\mosquitto.exe";
     private static final int DEFAULT_PORT = 1884;
     private static final long MAX_WAIT_SEC = 10;
 
@@ -47,6 +47,15 @@ public class MosquittoProcessManager {
     @PostConstruct
     public void start() throws IOException, InterruptedException {
         int port = mqttProperties.getBrokerPort() > 0 ? mqttProperties.getBrokerPort() : DEFAULT_PORT;
+        String mosquittoPath = mqttProperties.getMosquittoPath();
+        if (mosquittoPath == null || mosquittoPath.isBlank()) {
+            mosquittoPath = DEFAULT_MOSQUITTO_PATH;
+        }
+
+        Path mosquittoExe = Path.of(mosquittoPath);
+        if (!Files.exists(mosquittoExe)) {
+            throw new IOException("Mosquitto 可执行文件不存在: " + mosquittoPath);
+        }
 
         // 在系统临时目录下创建独立配置目录
         Path workDir = Path.of(System.getProperty("java.io.tmpdir"), "uav-mosquitto");
@@ -59,7 +68,7 @@ public class MosquittoProcessManager {
 
         // 启动 Mosquitto 子进程
         ProcessBuilder builder = new ProcessBuilder(
-                MOSQUITTO_EXE, "-c", configFile.toAbsolutePath().toString(), "-v");
+                mosquittoPath, "-c", configFile.toAbsolutePath().toString(), "-v");
        builder.directory(workDir.toFile());
        builder.redirectErrorStream(true);
         // stdout/stderr 合并后写入日志文件，方便排查 MQTT 连接问题

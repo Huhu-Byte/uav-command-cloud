@@ -10,7 +10,7 @@ const navigationItems = [
   { name: '成果中心', description: '按任务查看巡检照片、视频和采集结果。' },
   { name: '操作历史', description: '集中查看返航和告警确认的留痕记录。' },
   { name: '系统管理', description: '查看服务连接、数据来源和接入准备状态。' },
-  { name: '航线规划', description: '航线规划按当前安排暂缓开发。', deferred: true },
+  { name: '航线规划', description: '在地图上制作、编辑并保存可复用的飞行航线。' },
 ]
 
 const activeNavigation = ref('指挥中心')
@@ -613,6 +613,7 @@ watch([activeNavigation, historyTypeFilter, historyResultFilter], ([navigation])
   if (navigation === '系统管理') loadSystemReadiness()
   if (navigation === '任务管理') loadTasks()
   if (navigation === '成果中心') loadInspectionResults()
+  if (navigation === '航线规划') loadFlightRoutes()
 })
 
 watch([resultTypeFilter, resultStatusFilter, resultTaskFilter], () => {
@@ -622,10 +623,295 @@ watch([resultTypeFilter, resultStatusFilter, resultTaskFilter], () => {
   resultExportMessage.value = ''
 })
 
+// ========== 航线规划相关状态 ==========
+const flightRoutes = ref([])
+const selectedRouteId = ref(null)
+const routesLoading = ref(false)
+const routesLoadError = ref('')
+const routeSaveMessage = ref('')
+const routeSaveMessageType = ref('')
+const routeSubmitting = ref(false)
+const routeValidating = ref(false)
+const routeValidateReport = ref(null)
+const allowUsedRouteModification = ref(false)
+const deleteConfirmOpen = ref(false)
+const deletingRouteId = ref(null)
+
+const routeForm = ref({
+  name: '',
+  area: '园区东侧',
+  mode: 'WAYPOINT_FLIGHT',
+})
+
+const routeAreas = [
+  '园区东侧',
+  '园区西侧',
+  '北门区域',
+  '南门区域',
+  '屋顶光伏区',
+  '仓库区',
+  '自定义区域',
+]
+
+const flightModes = [
+  { value: 'WAYPOINT_FLIGHT', label: '航点飞行' },
+  { value: 'AERIAL_PHOTOGRAPHY', label: '航拍测绘' },
+]
+
+const payloadOptions = ['主相机', '红外相机', '变焦相机']
+const actionOptions = [
+  { value: 'TAKE_PHOTO', label: '拍照' },
+  { value: 'RECORD_VIDEO', label: '录像' },
+  { value: 'HOVER', label: '悬停' },
+  { value: 'NONE', label: '无动作' },
+]
+
+// 航点数据
+const waypoints = ref([])
+const selectedWaypointIndex = ref(-1)
+const defaultWaypointAction = 'TAKE_PHOTO'
+const defaultWaypointPayload = '主相机'
+
+const selectedRoute = computed(() => flightRoutes.value.find((r) => r.id === selectedRouteId.value) || null)
+
+const routeTotalDistance = computed(() => {
+  if (waypoints.value.length < 2) return 0
+  let total = 0
+  const R = 6371000
+  for (let i = 0; i < waypoints.value.length - 1; i++) {
+    const a = waypoints.value[i]
+    const b = waypoints.value[i + 1]
+    const dLat = (b.lat - a.lat) * Math.PI / 180
+    const dLng = (b.lng - a.lng) * Math.PI / 180
+    const lat1 = a.lat * Math.PI / 180
+    const lat2 = b.lat * Math.PI / 180
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+    total += 2 * R * Math.asin(Math.sqrt(h))
+  }
+  return Math.round(total)
+})
+
+const routeEstimatedDuration = computed(() => {
+  if (waypoints.value.length === 0 || routeTotalDistance.value === 0) return 0
+  const avgSpeed = waypoints.value.reduce((s, w) => s + (w.speed || 8), 0) / waypoints.value.length || 8
+  return Math.round(routeTotalDistance.value / Math.max(1, avgSpeed) + waypoints.value.length * 2)
+})
+
+function formatDuration(seconds) {
+  if (!seconds || seconds < 0) return '—'
+  if (seconds < 60) return `${seconds} 秒`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return m < 60 ? `${m} 分 ${s} 秒` : `${Math.floor(m / 60)} 时 ${m % 60} 分`
+}
+
+// ========== 航线规划 API 调用 ==========
+async function loadFlightRoutes() {
+  routesLoading.value = true
+  routesLoadError.value = ''
+  try {
+    flightRoutes.value = await requestDashboardApi('/routes', undefined, '暂时无法读取航线列表，请确认后端已启动。')
+    if (!flightRoutes.value.some((r) => r.id === selectedRouteId.value)) {
+      selectedRouteId.value = flightRoutes.value[0]?.id || null
+      if (selectedRouteId.value) selectRoute(selectedRouteId.value)
+    }
+  } catch (error) {
+    routesLoadError.value = error.message
+  } finally {
+    routesLoading.value = false
+  }
+}
+
+function createNewRoute() {
+  selectedRouteId.value = null
+  routeForm.value = {
+    name: '',
+    area: '园区东侧',
+    mode: 'WAYPOINT_FLIGHT',
+  }
+  waypoints.value = []
+  selectedWaypointIndex.value = -1
+  routeSaveMessage.value = ''
+  routeValidateReport.value = null
+  allowUsedRouteModification.value = false
+}
+
+function selectRoute(id) {
+  const route = flightRoutes.value.find((r) => r.id === id)
+  if (!route) return
+  selectedRouteId.value = id
+  routeForm.value = {
+    name: route.name,
+    area: route.area,
+    mode: route.mode,
+  }
+  waypoints.value = (route.waypoints || []).map((wp) => ({ ...wp }))
+  selectedWaypointIndex.value = -1
+  routeSaveMessage.value = ''
+  routeValidateReport.value = null
+  allowUsedRouteModification.value = false
+}
+
+function addWaypoint() {
+  const index = waypoints.value.length + 1
+  const baseLat = waypoints.value.length > 0
+    ? waypoints.value[waypoints.value.length - 1].lat + 0.001
+    : 39.9042
+  const baseLng = waypoints.value.length > 0
+    ? waypoints.value[waypoints.value.length - 1].lng + 0.001
+    : 116.4074
+  waypoints.value.push({
+    code: `WP${String(index).padStart(2, '0')}`,
+    label: `航点 ${index}`,
+    lat: Number(baseLat.toFixed(6)),
+    lng: Number(baseLng.toFixed(6)),
+    altitude: 60,
+    speed: 8,
+    action: defaultWaypointAction,
+    payload: defaultWaypointPayload,
+    actionParam: '单次拍摄',
+  })
+  selectedWaypointIndex.value = waypoints.value.length - 1
+}
+
+function copyWaypoint(index) {
+  const src = waypoints.value[index]
+  if (!src) return
+  const copy = { ...src, code: `WP${String(waypoints.value.length + 1).padStart(2, '0')}` }
+  waypoints.value.splice(index + 1, 0, copy)
+  selectedWaypointIndex.value = index + 1
+}
+
+function removeWaypoint(index) {
+  waypoints.value.splice(index, 1)
+  if (selectedWaypointIndex.value >= waypoints.value.length) {
+    selectedWaypointIndex.value = waypoints.value.length - 1
+  }
+  // 重新编号
+  waypoints.value.forEach((wp, i) => {
+    wp.code = `WP${String(i + 1).padStart(2, '0')}`
+  })
+}
+
+function moveWaypoint(index, direction) {
+  const target = index + direction
+  if (target < 0 || target >= waypoints.value.length) return
+  const [item] = waypoints.value.splice(index, 1)
+  waypoints.value.splice(target, 0, item)
+  // 重新编号
+  waypoints.value.forEach((wp, i) => {
+    wp.code = `WP${String(i + 1).padStart(2, '0')}`
+  })
+  selectedWaypointIndex.value = target
+}
+
+function waypointActionLabel(action) {
+  return actionOptions.find((o) => o.value === action)?.label || action || '无动作'
+}
+
+async function validateCurrentRoute() {
+  routeValidating.value = true
+  routeValidateReport.value = null
+  try {
+    routeValidateReport.value = await requestDashboardApi('/routes/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: routeForm.value.name,
+        area: routeForm.value.area,
+        mode: routeForm.value.mode,
+        waypointsJson: JSON.stringify(waypoints.value),
+        allowUsedRouteModification: allowUsedRouteModification.value,
+      }),
+    }, '暂时无法校验航线，请确认后端服务可用。')
+  } catch (error) {
+    routeValidateReport.value = {
+      valid: false,
+      errors: [error.message],
+      warnings: [],
+      waypointCount: waypoints.value.length,
+      totalDistanceMeters: routeTotalDistance.value,
+      estimatedDurationSeconds: routeEstimatedDuration.value,
+    }
+  } finally {
+    routeValidating.value = false
+  }
+}
+
+async function saveCurrentRoute() {
+  if (routeSubmitting.value) return
+  routeSubmitting.value = true
+  routeSaveMessage.value = ''
+  routeSaveMessageType.value = ''
+  try {
+    const payload = {
+      name: routeForm.value.name.trim(),
+      area: routeForm.value.area,
+      mode: routeForm.value.mode,
+      waypointsJson: JSON.stringify(waypoints.value),
+      allowUsedRouteModification: allowUsedRouteModification.value,
+    }
+    const isEditing = selectedRouteId.value != null
+    const url = isEditing ? `/routes/${selectedRouteId.value}` : '/routes'
+    const result = await requestDashboardApi(url, {
+      method: isEditing ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json', ...identityHeaders() },
+      body: JSON.stringify(payload),
+    }, isEditing ? '保存修改失败，请确认后端服务可用。' : '创建航线失败，请确认后端服务可用。')
+    routeSaveMessage.value = isEditing ? '航线已保存修改。' : '航线已创建。'
+    routeSaveMessageType.value = 'success'
+    await loadFlightRoutes()
+    selectedRouteId.value = result.id
+    selectRoute(result.id)
+  } catch (error) {
+    routeSaveMessage.value = error.message
+    routeSaveMessageType.value = 'error'
+  } finally {
+    routeSubmitting.value = false
+  }
+}
+
+function openDeleteConfirm(id) {
+  deletingRouteId.value = id
+  deleteConfirmOpen.value = true
+}
+
+function cancelDelete() {
+  deleteConfirmOpen.value = false
+  deletingRouteId.value = null
+}
+
+async function confirmDeleteRoute() {
+  const id = deletingRouteId.value
+  if (id == null) return
+  try {
+    await requestDashboardApi(`/routes/${id}`, {
+      method: 'DELETE',
+      headers: identityHeaders(),
+    }, '删除航线失败，请确认后端服务可用。')
+    if (selectedRouteId.value === id) {
+      createNewRoute()
+    }
+    await loadFlightRoutes()
+    routeSaveMessage.value = '航线已删除。'
+    routeSaveMessageType.value = 'success'
+  } catch (error) {
+    routeSaveMessage.value = error.message
+    routeSaveMessageType.value = 'error'
+  } finally {
+    deleteConfirmOpen.value = false
+    deletingRouteId.value = null
+  }
+}
+
+// 用于任务表单中的航线选择
+const routeOptions = computed(() => flightRoutes.value.map((r) => r.name))
+
 onMounted(() => {
   connectRealtimeService()
   loadTasks()
   loadInspectionResults()
+  loadFlightRoutes()
   clockTimer = window.setInterval(() => { now.value = new Date() }, 1000)
 })
 onBeforeUnmount(() => {
@@ -823,6 +1109,238 @@ onBeforeUnmount(() => {
       <section class="system-boundary"><div><p class="section-label">CURRENT BOUNDARY</p><h2>真实设备接入前的安全边界</h2></div><ul><li>真实凭证只保存在服务器环境变量中</li><li>未完成测试设备验收前不发送真实控制</li><li>网页只读取统一格式，不直接接触厂商密钥</li></ul></section>
     </section>
 
+        <section v-else-if="activeNavigation === '航线规划'" class="module-page route-planner">
+          <header class="module-intro">
+            <p>FLIGHT ROUTE PLANNER</p>
+            <h1>航线，逐点规划。</h1>
+            <span>{{ currentModule.description }} 规划完成的航线可在任务管理中直接关联执行。</span>
+          </header>
+
+          <div class="route-safety-notice">
+            <span>航线由后端统一保存与管理</span>
+            <small>规划完成后可在任务管理中关联下发，当前阶段不会自动发送飞行或设备控制指令。</small>
+          </div>
+
+          <div class="route-toolbar">
+            <div class="route-actions">
+              <button type="button" :disabled="routesLoading" @click="loadFlightRoutes">{{ routesLoading ? '正在刷新…' : '刷新列表' }}</button>
+              <button type="button" class="primary" @click="createNewRoute">+ 新建航线</button>
+            </div>
+            <div class="route-summary">
+              <span>航线总数 <strong>{{ flightRoutes.length }}</strong></span>
+              <span v-if="selectedRoute">航点 <strong>{{ waypoints.length }}</strong></span>
+              <span v-if="selectedRoute || waypoints.length">总距离 <strong>{{ routeTotalDistance }} m</strong></span>
+              <span v-if="selectedRoute || waypoints.length">预计时长 <strong>{{ formatDuration(routeEstimatedDuration) }}</strong></span>
+            </div>
+          </div>
+
+          <p v-if="routesLoadError" class="history-message error" aria-live="polite">{{ routesLoadError }}</p>
+          <p v-if="routeSaveMessage" :class="['history-message', routeSaveMessageType]" aria-live="polite">{{ routeSaveMessage }}</p>
+
+          <div class="route-layout">
+            <!-- 左侧：航线列表 -->
+            <aside class="route-sidebar">
+              <div class="section-heading">
+                <div><p class="section-label">ROUTE LIST</p><h2>航线列表</h2></div>
+              </div>
+              <div class="route-list">
+                <button
+                  v-for="route in flightRoutes"
+                  :key="route.id"
+                  type="button"
+                  :class="{ chosen: route.id === selectedRouteId }"
+                  @click="selectRoute(route.id)"
+                >
+                  <span :class="['route-mode-dot', route.mode]"></span>
+                  <div>
+                    <strong>{{ route.name }}</strong>
+                    <small>{{ route.area }} · {{ route.waypointCount }} 航点 · 最近修改 {{ route.modifiedAt?.slice(0, 16)?.replace('T', ' ') || '—' }}</small>
+                  </div>
+                  <em>{{ route.usedInTasks > 0 ? `${route.usedInTasks} 个任务` : '未使用' }}</em>
+                </button>
+                <p v-if="!flightRoutes.length && !routesLoading" class="history-empty">暂无航线，点击"新建航线"开始规划。</p>
+              </div>
+            </aside>
+
+            <!-- 中间：地图与航线可视化 -->
+            <section class="route-map-panel">
+              <div class="route-map-toolbar">
+                <p class="section-label">{{ selectedRouteId ? '编辑中航线' : '草稿模式' }} · MAP VIEW</p>
+                <div>
+                  <button type="button" :disabled="!canControl" @click="addWaypoint">+ 添加航点</button>
+                </div>
+              </div>
+              <div class="route-map-visual" aria-label="航线地图可视化">
+                <div class="map-grid"></div>
+                <div class="map-terrain"></div>
+                <span class="place place-a">北门</span>
+                <span class="place place-b">东侧围栏</span>
+                <span class="place place-c">仓库区</span>
+                <span class="place place-d">光伏屋顶</span>
+                <span class="map-compass">N</span>
+                <svg v-if="waypoints.length >= 2" class="route-polyline" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polyline
+                    :points="waypoints.map((_, i) => {
+                      const x = 10 + (i * 80 / Math.max(1, waypoints.length - 1));
+                      const y = waypoints.length > 1 ? 20 + ((waypoints[i].altitude || 60) - 40) * 0.5 : 50;
+                      return `${x},${Math.max(10, Math.min(90, y))}`;
+                    }).join(' ')"
+                    fill="none"
+                    stroke="#3b82f6"
+                    stroke-width="0.6"
+                    stroke-dasharray="1.5,1"
+                  />
+                </svg>
+                <svg v-if="waypoints.length >= 2" class="route-polyline" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polyline
+                    :points="waypoints.map((_, i) => {
+                      const x = 10 + (i * 80 / Math.max(1, waypoints.length - 1));
+                      const y = waypoints.length > 1 ? 20 + ((waypoints[i].altitude || 60) - 40) * 0.5 : 50;
+                      return `${x},${Math.max(10, Math.min(90, y))}`;
+                    }).join(' ')"
+                    fill="none"
+                    stroke="#3b82f6"
+                    stroke-width="0.3"
+                    opacity="0.3"
+                  />
+                </svg>
+                <div
+                  v-for="(wp, idx) in waypoints"
+                  :key="wp.code"
+                  :class="['waypoint-marker', { selected: idx === selectedWaypointIndex, first: idx === 0, last: idx === waypoints.length - 1 }]"
+                  :style="{ left: `${10 + (idx * 80 / Math.max(1, waypoints.length - 1))}%`, top: `${Math.max(10, Math.min(85, 20 + ((wp.altitude || 60) - 40) * 0.5))}%` }"
+                  @click="selectedWaypointIndex = idx"
+                >
+                  <b>{{ idx + 1 }}</b>
+                  <small>{{ wp.label }}</small>
+                  <em v-if="wp.altitude" class="wp-altitude-tag">{{ wp.altitude }}m</em>
+                </div>
+                <div v-if="!waypoints.length" class="map-empty-hint">
+                  <span>点击上方"添加航点"开始规划航线</span>
+                </div>
+                <div class="map-caption">
+                  <span><i></i>规划航线（示意）</span>
+                  <b>航点数：{{ waypoints.length }}</b>
+                </div>
+              </div>
+
+              <!-- 航线基本信息 -->
+              <div class="route-info-card">
+                <div class="route-info-grid">
+                  <label>航线名称
+                    <input v-model="routeForm.name" maxlength="80" placeholder="例如：北侧围栏例行巡检" />
+                  </label>
+                  <label>所属区域
+                    <select v-model="routeForm.area">
+                      <option v-for="area in routeAreas" :key="area" :value="area">{{ area }}</option>
+                    </select>
+                  </label>
+                  <label>飞行模式
+                    <select v-model="routeForm.mode">
+                      <option v-for="mode in flightModes" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
+                    </select>
+                  </label>
+                  <label class="checkbox" v-if="selectedRoute && selectedRoute.usedInTasks > 0">
+                    <input type="checkbox" v-model="allowUsedRouteModification" />
+                    <span>该航线已被 {{ selectedRoute.usedInTasks }} 个任务使用，确认允许修改</span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <!-- 右侧：航点列表与编辑 -->
+            <aside class="waypoint-panel">
+              <div class="section-heading">
+                <div><p class="section-label">WAYPOINTS</p><h2>航点编辑</h2></div>
+                <button type="button" :disabled="!canControl || waypoints.length === 0" @click="addWaypoint">+ 新增</button>
+              </div>
+
+              <div class="waypoint-list">
+                <div
+                  v-for="(wp, idx) in waypoints"
+                  :key="wp.code + '-' + idx"
+                  :class="['waypoint-item', { selected: idx === selectedWaypointIndex }]"
+                  @click="selectedWaypointIndex = idx"
+                >
+                  <header>
+                    <span :class="['waypoint-index', { first: idx === 0, last: idx === waypoints.length - 1 }]">{{ idx + 1 }}</span>
+                    <strong>{{ wp.label }}</strong>
+                    <em>{{ waypointActionLabel(wp.action) }}</em>
+                    <div class="waypoint-item-actions">
+                      <button type="button" :disabled="idx === 0" @click.stop="moveWaypoint(idx, -1)" title="上移">↑</button>
+                      <button type="button" :disabled="idx === waypoints.length - 1" @click.stop="moveWaypoint(idx, 1)" title="下移">↓</button>
+                      <button type="button" @click.stop="copyWaypoint(idx)" title="复制">⎘</button>
+                      <button type="button" class="danger" :disabled="!canControl" @click.stop="removeWaypoint(idx)" title="删除">×</button>
+                    </div>
+                  </header>
+                  <div v-if="idx === selectedWaypointIndex" class="waypoint-editor">
+                    <label>航点编号<input v-model="wp.code" maxlength="10" /></label>
+                    <label>航点名称<input v-model="wp.label" maxlength="30" /></label>
+                    <div class="form-two-columns">
+                      <label>纬度<input v-model.number="wp.lat" type="number" step="0.000001" /></label>
+                      <label>经度<input v-model.number="wp.lng" type="number" step="0.000001" /></label>
+                    </div>
+                    <div class="form-two-columns">
+                      <label>高度 (m)<input v-model.number="wp.altitude" type="number" min="20" max="120" step="5" /></label>
+                      <label>速度 (m/s)<input v-model.number="wp.speed" type="number" min="2" max="15" step="1" /></label>
+                    </div>
+                    <div class="form-two-columns">
+                      <label>动作
+                        <select v-model="wp.action">
+                          <option v-for="act in actionOptions" :key="act.value" :value="act.value">{{ act.label }}</option>
+                        </select>
+                      </label>
+                      <label>载荷
+                        <select v-model="wp.payload">
+                          <option v-for="p in payloadOptions" :key="p" :value="p">{{ p }}</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label>动作参数<input v-model="wp.actionParam" maxlength="50" placeholder="例如：单次拍摄、4K录制、间隔2秒连拍" /></label>
+                  </div>
+                </div>
+                <p v-if="!waypoints.length" class="history-empty">暂无航点，点击"+添加航点"开始。至少需要 3 个航点。</p>
+              </div>
+
+              <!-- 校验与保存 -->
+              <div class="route-actions-panel">
+                <button type="button" :disabled="routeValidating || waypoints.length === 0" @click="validateCurrentRoute">
+                  {{ routeValidating ? '校验中…' : '校验航线' }}
+                </button>
+                <div class="validate-report" v-if="routeValidateReport">
+                  <p :class="['validate-summary', routeValidateReport.valid ? 'ok' : 'bad']">
+                    {{ routeValidateReport.valid ? '✅ 校验通过' : '❌ 校验不通过' }}
+                    <span>共 {{ routeValidateReport.waypointCount }} 航点 · 距离 {{ routeValidateReport.totalDistanceMeters }} m · 预计 {{ formatDuration(routeValidateReport.estimatedDurationSeconds) }}</span>
+                  </p>
+                  <ul v-if="routeValidateReport.errors?.length" class="validate-errors">
+                    <li v-for="(e, i) in routeValidateReport.errors" :key="'e'+i">⚠ {{ e }}</li>
+                  </ul>
+                  <ul v-if="routeValidateReport.warnings?.length" class="validate-warnings">
+                    <li v-for="(w, i) in routeValidateReport.warnings" :key="'w'+i">ℹ {{ w }}</li>
+                  </ul>
+                </div>
+                <div class="route-save-actions">
+                  <button
+                    v-if="selectedRoute && canControl"
+                    type="button"
+                    class="danger"
+                    :disabled="selectedRoute.usedInTasks > 0"
+                    :title="selectedRoute.usedInTasks > 0 ? '被任务使用中，不能删除' : '删除此航线'"
+                    @click="openDeleteConfirm(selectedRoute.id)"
+                  >删除航线</button>
+                  <button
+                    type="button"
+                    class="primary"
+                    :disabled="routeSubmitting || !canControl"
+                    @click="saveCurrentRoute"
+                  >{{ routeSubmitting ? '保存中…' : selectedRouteId ? '保存修改' : '创建航线' }}</button>
+                </div>
+                <p v-if="!canControl" class="permission-hint">当前身份：{{ identityLabel }}。请切换为飞行操作员或管理员后编辑航线。</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
         <section v-else class="module-page empty-state"><p>DEFERRED</p><h1>{{ currentModule.name }}</h1><span>{{ currentModule.description }} 先完成其他前端页面后再继续。</span></section>
       </div>
     </section>
@@ -836,7 +1354,12 @@ onBeforeUnmount(() => {
         <label>任务名称<input v-model="taskForm.name" maxlength="40" placeholder="例如：北侧围栏例行巡检" /></label>
         <div class="form-two-columns"><label>执行设备<select v-model="taskForm.device"><option v-for="device in devices.filter((item) => item.status !== '离线')" :key="device.name" :value="device.name">{{ device.name }}</option></select></label><label>执行频率<select v-model="taskForm.frequency"><option>一次性</option><option>每日重复</option><option>每周重复</option></select></label></div>
         <label>计划执行时间<input v-model="taskForm.scheduledAt" type="datetime-local" /></label>
-        <label>关联路线<input v-model="taskForm.route" maxlength="50" /></label>
+        <label>关联路线
+          <select v-model="taskForm.route">
+            <option value="待规划路线（航线规划暂缓）">待选择路线</option>
+            <option v-for="routeName in routeOptions" :key="routeName" :value="routeName">{{ routeName }}</option>
+          </select>
+        </label>
         <p v-if="taskFormMessage" class="form-message error" aria-live="polite">{{ taskFormMessage }}</p>
         <div class="dialog-actions"><button type="button" :disabled="taskFormSubmitting" @click="closeTaskDialog">取消</button><button type="submit" :disabled="taskFormSubmitting">{{ taskFormSubmitting ? '正在保存…' : editingTaskId ? '保存修改' : '保存任务' }}</button></div>
       </form>
@@ -874,6 +1397,21 @@ onBeforeUnmount(() => {
       </dl>
       <p class="confirmation-safety">{{ returnScenarioDescription }}</p>
       <div class="confirmation-actions"><button type="button" @click="cancelReturnConfirmation">取消</button><button type="button" :disabled="returnSubmitting" @click="submitReturn">{{ returnSubmitting ? '正在安全检查…' : '确认发起返航' }}</button></div>
+    </section>
+  </div>
+
+  <div v-if="deleteConfirmOpen" class="confirmation-backdrop" @click.self="cancelDelete">
+    <section class="return-confirmation" role="dialog" aria-modal="true" aria-labelledby="delete-confirmation-title">
+      <p class="section-label">DELETE CONFIRMATION</p>
+      <h2 id="delete-confirmation-title">确认删除此航线？</h2>
+      <p>删除后无法恢复，请确认该航线不再需要。</p>
+      <dl v-if="selectedRoute">
+        <div><dt>航线名称</dt><dd>{{ selectedRoute.name }}</dd></div>
+        <div><dt>所属区域</dt><dd>{{ selectedRoute.area }}</dd></div>
+        <div><dt>航点数量</dt><dd>{{ selectedRoute.waypointCount }} 个</dd></div>
+        <div><dt>关联任务</dt><dd>{{ selectedRoute.usedInTasks }} 个</dd></div>
+      </dl>
+      <div class="confirmation-actions"><button type="button" @click="cancelDelete">取消</button><button type="button" class="danger" @click="confirmDeleteRoute">确认删除</button></div>
     </section>
   </div>
 </template>

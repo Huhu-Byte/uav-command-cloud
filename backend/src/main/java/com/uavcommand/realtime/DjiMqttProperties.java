@@ -19,6 +19,7 @@ public class DjiMqttProperties {
     /** 内嵌 Broker 监听端口，0 表示使用默认 1883。 */
     private int brokerPort = 0;
     private boolean embeddedBroker;
+    private String mosquittoPath = "C:\\Program Files\\Mosquitto\\mosquitto.exe";
     private volatile boolean connected;
     private volatile String lastError = "";
 
@@ -48,6 +49,8 @@ public class DjiMqttProperties {
     public void setBrokerPort(int brokerPort) { this.brokerPort = brokerPort; }
     public boolean isEmbeddedBroker() { return embeddedBroker; }
     public void setEmbeddedBroker(boolean embeddedBroker) { this.embeddedBroker = embeddedBroker; }
+    public String getMosquittoPath() { return mosquittoPath; }
+    public void setMosquittoPath(String mosquittoPath) { this.mosquittoPath = mosquittoPath == null ? "" : mosquittoPath.trim(); }
     public boolean isConnected() { return connected; }
     public void setConnected(boolean connected) { this.connected = connected; }
     public String getLastError() { return lastError; }
