@@ -647,6 +647,14 @@ const dispatchForm = ref({
   taskName: '',
 })
 
+// ========== 设备控制状态 ==========
+const deviceControlGatewaySn = ref('DJI-DOCK-DEMO-001')
+const deviceControlMessage = ref('')
+const deviceControlMessageType = ref('')
+const deviceControlLoading = ref(false)
+const mediaFiles = ref([])
+const mediaLoading = ref(false)
+
 const routeForm = ref({
   name: '',
   area: '园区东侧',
@@ -989,6 +997,71 @@ async function submitDispatch() {
   }
 }
 
+// ========== 设备控制函数 ==========
+async function callDeviceControl(endpoint, body, label) {
+  if (deviceControlLoading.value) return
+  deviceControlLoading.value = true
+  deviceControlMessage.value = ''
+  try {
+    const result = await fetch(`${backendBaseUrl}/api/v1/flight-tasks${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...identityHeaders() },
+      body: JSON.stringify(body),
+    })
+    if (!result.ok) {
+      const err = await result.json().catch(() => null)
+      throw new Error(err?.message || `${label}失败`)
+    }
+    const data = await result.json()
+    const code = data.code ?? data.Code
+    if (code !== undefined && code !== 0 && code !== '0') {
+      deviceControlMessage.value = `⚠ ${label}返回错误码：${code}`
+      deviceControlMessageType.value = 'error'
+    } else {
+      deviceControlMessage.value = `✅ ${label}成功`
+      deviceControlMessageType.value = 'success'
+    }
+  } catch (error) {
+    deviceControlMessage.value = `❌ ${error.message}`
+    deviceControlMessageType.value = 'error'
+  } finally {
+    deviceControlLoading.value = false
+  }
+}
+
+function controlReturnHome() {
+  callDeviceControl('/return-home', { gatewaySn: deviceControlGatewaySn.value }, '返航指令')
+}
+
+function controlCoverOpen() {
+  callDeviceControl(`/property/cover_open`, { gatewaySn: deviceControlGatewaySn.value, value: '1' }, '开舱盖')
+}
+
+function controlCoverClose() {
+  callDeviceControl(`/property/cover_open`, { gatewaySn: deviceControlGatewaySn.value, value: '0' }, '关舱盖')
+}
+
+function controlEmergencyStop() {
+  callDeviceControl(`/property/emergency_stop`, { gatewaySn: deviceControlGatewaySn.value, value: '1' }, '急停')
+}
+
+function controlEmergencyRelease() {
+  callDeviceControl(`/property/emergency_stop`, { gatewaySn: deviceControlGatewaySn.value, value: '0' }, '解除急停')
+}
+
+// ========== 媒体文件 ==========
+async function loadMediaFiles() {
+  mediaLoading.value = true
+  try {
+    const data = await fetch(`${backendBaseUrl}/api/v1/media`).then((r) => r.json())
+    mediaFiles.value = Array.isArray(data) ? data : []
+  } catch {
+    mediaFiles.value = []
+  } finally {
+    mediaLoading.value = false
+  }
+}
+
 // 用于任务表单中的航线选择
 const routeOptions = computed(() => flightRoutes.value.map((r) => r.name))
 
@@ -997,6 +1070,7 @@ onMounted(() => {
   loadTasks()
   loadInspectionResults()
   loadFlightRoutes()
+  loadMediaFiles()
   clockTimer = window.setInterval(() => { now.value = new Date() }, 1000)
 })
 onBeforeUnmount(() => {
@@ -1116,7 +1190,31 @@ onBeforeUnmount(() => {
       <div class="device-summary"><article><span>设备总数</span><strong>{{ devices.length }}</strong><small>当前纳管无人机</small></article><article><span>在线设备</span><strong>{{ liveStatus.onlineDeviceCount }}</strong><small>可接收实时状态</small></article><article><span>离线设备</span><strong>{{ offlineDevices.length }}</strong><small>需要检查网络或电源</small></article><article><span>数据状态</span><strong>{{ dataHealth.state === 'normal' ? '正常' : '需关注' }}</strong><small>{{ lastUpdatedLabel ? `更新于 ${lastUpdatedLabel}` : '等待数据' }}</small></article></div>
       <div class="device-layout">
         <section class="device-list"><button v-for="device in devices" :key="device.name" type="button" :class="{ selected: device.name === selectedDevice?.name }" @click="selectedDeviceName = device.name"><span :class="['status-dot', { offline: device.status === '离线' }]"></span><div><strong>{{ device.name }}</strong><small>{{ device.connectionStatus === 'OFFLINE' ? '连接中断' : '遥测连接正常' }}</small></div><b>{{ device.status }}</b><em>{{ device.battery }}%</em></button></section>
-        <aside v-if="selectedDevice" class="device-detail"><div class="device-detail-heading"><div><p class="section-label">DEVICE DETAIL</p><h2>{{ selectedDevice.name }}</h2></div><span :class="{ offline: selectedDevice.status === '离线' }">{{ selectedDevice.status }}</span></div><dl><div><dt>设备类型</dt><dd>行业巡检无人机</dd></div><div><dt>连接状态</dt><dd>{{ selectedDevice.connectionStatus === 'OFFLINE' ? '离线' : '在线' }}</dd></div><div><dt>当前电量</dt><dd>{{ selectedDevice.battery }}%</dd></div><div><dt>固件状态</dt><dd>版本正常</dd></div><div><dt>最近任务</dt><dd>{{ selectedDevice.name.includes('02') ? '园区东侧例行巡检' : '暂无执行中任务' }}</dd></div><div><dt>维护建议</dt><dd>{{ selectedDevice.status === '离线' ? '检查设备供电与网络连接' : '当前无需维护' }}</dd></div></dl><button type="button" @click="activeNavigation = '实时监控'">查看实时通道 →</button></aside>
+        <aside v-if="selectedDevice" class="device-detail">
+          <div class="device-detail-heading"><div><p class="section-label">DEVICE DETAIL</p><h2>{{ selectedDevice.name }}</h2></div><span :class="{ offline: selectedDevice.status === '离线' }">{{ selectedDevice.status }}</span></div>
+          <dl><div><dt>设备类型</dt><dd>行业巡检无人机</dd></div><div><dt>连接状态</dt><dd>{{ selectedDevice.connectionStatus === 'OFFLINE' ? '离线' : '在线' }}</dd></div><div><dt>当前电量</dt><dd>{{ selectedDevice.battery }}%</dd></div><div><dt>固件状态</dt><dd>版本正常</dd></div><div><dt>最近任务</dt><dd>{{ selectedDevice.name.includes('02') ? '园区东侧例行巡检' : '暂无执行中任务' }}</dd></div><div><dt>维护建议</dt><dd>{{ selectedDevice.status === '离线' ? '检查设备供电与网络连接' : '当前无需维护' }}</dd></div></dl>
+
+          <!-- 设备控制面板 -->
+          <div class="device-control-panel" v-if="canControl">
+            <p class="section-label">DEVICE CONTROL</p>
+            <h3>远程控制</h3>
+            <label class="control-gateway-input">机场网关 SN
+              <input v-model="deviceControlGatewaySn" maxlength="100" placeholder="例如：DJI-DOCK-001" />
+            </label>
+            <div class="control-button-grid">
+              <button type="button" :disabled="deviceControlLoading" @click="controlReturnHome" class="control-btn return">🛬 返航</button>
+              <button type="button" :disabled="deviceControlLoading" @click="controlCoverOpen" class="control-btn">📂 开舱盖</button>
+              <button type="button" :disabled="deviceControlLoading" @click="controlCoverClose" class="control-btn">📁 关舱盖</button>
+              <button type="button" :disabled="deviceControlLoading" @click="controlEmergencyStop" class="control-btn danger">⛔ 急停</button>
+              <button type="button" :disabled="deviceControlLoading" @click="controlEmergencyRelease" class="control-btn">🔓 解除急停</button>
+            </div>
+            <p v-if="deviceControlMessage" :class="['control-message', deviceControlMessageType]" aria-live="polite">{{ deviceControlMessage }}</p>
+            <p v-if="deviceControlLoading" class="control-message">正在发送指令…</p>
+          </div>
+          <p v-else class="permission-hint">当前身份：{{ identityLabel }}。请切换为飞行操作员或管理员后使用远程控制。</p>
+
+          <button type="button" @click="activeNavigation = '实时监控'">查看实时通道 →</button>
+        </aside>
       </div>
     </section>
 

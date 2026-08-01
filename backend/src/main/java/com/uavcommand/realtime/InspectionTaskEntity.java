@@ -43,6 +43,9 @@ public class InspectionTaskEntity {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "flight_id", length = 64)
+    private String flightId;
+
     protected InspectionTaskEntity() {
     }
 
@@ -57,6 +60,21 @@ public class InspectionTaskEntity {
             String operator,
             LocalDateTime createdAt
     ) {
+        this(name, route, device, status, progress, scheduledAt, frequency, operator, createdAt, null);
+    }
+
+    public InspectionTaskEntity(
+            String name,
+            String route,
+            String device,
+            String status,
+            int progress,
+            LocalDateTime scheduledAt,
+            String frequency,
+            String operator,
+            LocalDateTime createdAt,
+            String flightId
+    ) {
         this.name = name;
         this.route = route;
         this.device = device;
@@ -66,6 +84,7 @@ public class InspectionTaskEntity {
         this.frequency = frequency;
         this.operator = operator;
         this.createdAt = createdAt;
+        this.flightId = flightId;
     }
 
     public Long getId() { return id; }
@@ -78,6 +97,8 @@ public class InspectionTaskEntity {
     public String getFrequency() { return frequency; }
     public String getOperator() { return operator; }
 
+    public String getFlightId() { return flightId; }
+
     public void updateDetails(String name, String route, String device, LocalDateTime scheduledAt, String frequency) {
         this.name = name;
         this.route = route;
@@ -85,4 +106,11 @@ public class InspectionTaskEntity {
         this.scheduledAt = scheduledAt;
         this.frequency = frequency;
     }
+
+    public void updateFlightStatus(String status, int progress) {
+        this.status = status;
+        this.progress = progress;
+    }
+
+    public void setFlightId(String flightId) { this.flightId = flightId; }
 }

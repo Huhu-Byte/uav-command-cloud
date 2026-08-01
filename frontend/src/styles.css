@@ -588,3 +588,38 @@ button { font: inherit; }
   .route-summary { width: 100%; justify-content: flex-start; flex-wrap: wrap; gap: 12px; }
   .route-map-visual { height: 320px; }
 }
+
+/* 设备控制面板 */
+.device-control-panel { margin-top: 22px; padding: 20px; border: 1px solid #dce4e9; border-radius: 10px; background: #f4f9fc; }
+.device-control-panel h3 { margin: 8px 0 16px; font-size: 18px; font-weight: 600; }
+.control-gateway-input { display: grid; gap: 6px; margin-bottom: 14px; color: #60788d; font-size: 12px; font-weight: 600; }
+.control-gateway-input input { width: 100%; padding: 9px 10px; border: 1px solid #c4d4de; border-radius: 6px; color: #1f2d3a; background: #fff; font: inherit; font-size: 13px; }
+.control-gateway-input input:focus { outline: 2px solid #1f7abe30; border-color: #1f7abe; }
+.control-button-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.control-btn { padding: 11px 8px; border: 1px solid #c4d4de; border-radius: 7px; color: #2c3e50; background: #fff; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .2s; }
+.control-btn:hover:not(:disabled) { border-color: #1f7abe; background: #e8f1f8; }
+.control-btn:disabled { opacity: .5; cursor: not-allowed; }
+.control-btn.return { border-color: #1f7abe; color: #1f7abe; }
+.control-btn.return:hover:not(:disabled) { background: #1f7abe; color: #fff; }
+.control-btn.danger { border-color: #e74c3c; color: #e74c3c; }
+.control-btn.danger:hover:not(:disabled) { background: #e74c3c; color: #fff; }
+.control-message { margin: 12px 0 0; padding: 9px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; }
+.control-message.success { color: #39705a; background: #dff1e7; }
+.control-message.error { color: #a64720; background: #ffe3d5; }
+.permission-hint { margin-top: 18px; padding: 12px; border-radius: 7px; color: #8a6d3b; background: #fcf8e3; font-size: 12px; line-height: 1.6; }
+
+/* 航线下发对话框 */
+.dispatch-dialog .validate-report { margin-top: 16px; padding: 16px; border: 1px solid #e0e0dc; border-radius: 8px; background: #f8fafc; }
+.dispatch-dialog .validate-summary { display: flex; justify-content: space-between; align-items: center; margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+.dispatch-dialog .validate-summary span { color: #64748b; font-size: 11px; font-weight: 400; }
+
+/* 媒体文件列表 */
+.media-list { display: grid; gap: 10px; margin-top: 18px; }
+.media-list article { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #e0e0dc; border-radius: 8px; background: #fff; }
+.media-list .media-icon { width: 36px; height: 36px; border-radius: 7px; display: grid; place-items: center; font-size: 18px; }
+.media-list .media-icon.photo { background: #e2f0f7; color: #1f6b95; }
+.media-list .media-icon.video { background: #f0e2f7; color: #6b1f95; }
+.media-list .media-info strong { font-size: 13px; font-weight: 600; }
+.media-list .media-info small { display: block; margin-top: 3px; color: #81817d; font-size: 11px; }
+.media-list .media-size { color: #81817d; font-size: 12px; }
+@media (max-width: 700px) { .control-button-grid { grid-template-columns: 1fr 1fr; } .media-list article { grid-template-columns: auto 1fr; } .media-list .media-size { grid-column: span 2; } }

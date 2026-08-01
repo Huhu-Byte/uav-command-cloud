@@ -1,5 +1,6 @@
 package com.uavcommand.realtime;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -78,8 +79,8 @@ public class FlightTaskDispatchService {
         if (taskName != null && !taskName.isBlank()) {
             try {
                 inspectionTaskService.create(operator, new InspectionTaskService.CreateTaskRequest(
-                        taskName, route.name(), "待下发",
-                        null, null, null, "自动下发", flightId
+                        taskName, gatewaySn, LocalDateTime.now(), "一次性",
+                        route.name(), "待下发", 0, flightId
                 ));
             } catch (Exception e) {
                 LOGGER.warn("创建任务记录失败，不影响下发 flightId={}", flightId, e);

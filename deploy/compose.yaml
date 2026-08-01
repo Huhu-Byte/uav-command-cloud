@@ -21,6 +21,28 @@ services:
   #   networks:
   #     - mqtt
 
+  # MinIO 对象存储：存储 KMZ 航线文件和巡检媒体
+  # 控制台: http://localhost:9001  API: http://localhost:9000
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${UAV_OSS_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${UAV_OSS_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - application
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -65,8 +87,19 @@ services:
       UAV_DJI_MQTT_CLIENT_ID: uav-command-backend
       UAV_REDIS_HOST: redis
       UAV_REDIS_PORT: "6379"
+      # 对象存储（MinIO）
+      UAV_OSS_ENABLED: "true"
+      UAV_OSS_PROVIDER: minio
+      UAV_OSS_ENDPOINT: http://minio:9000
+      UAV_OSS_ACCESS_KEY: ${UAV_OSS_ACCESS_KEY:-minioadmin}
+      UAV_OSS_SECRET_KEY: ${UAV_OSS_SECRET_KEY:-minioadmin}
+      UAV_OSS_BUCKET: ${UAV_OSS_BUCKET:-uav-command}
+      UAV_OSS_REGION: us-east-1
+      UAV_OSS_PUBLIC_ENDPOINT: http://localhost:9000
     depends_on:
       mysql:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - database
@@ -85,6 +118,7 @@ services:
 
 volumes:
   mysql-data:
+  minio-data:
 
 networks:
   database:

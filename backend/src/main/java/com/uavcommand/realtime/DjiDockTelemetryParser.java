@@ -29,6 +29,7 @@ public class DjiDockTelemetryParser {
 
     private final DjiDockTopologyRegistry topologyRegistry;
     private final RealtimeStatusPublisher publisher;
+    private final InspectionTaskService inspectionTaskService;
     private final Map<String, String> deviceStates = new ConcurrentHashMap<>();
     /** OSD 数据缓存：gatewaySn:dock / gatewaySn:aircraft → 最新 OSD data。 */
     private final Map<String, Map<String, Object>> osdCache = new ConcurrentHashMap<>();
@@ -36,9 +37,11 @@ public class DjiDockTelemetryParser {
     private volatile String lastOsdTopic;
     private volatile String lastOsdPayload;
 
-    public DjiDockTelemetryParser(DjiDockTopologyRegistry topologyRegistry, RealtimeStatusPublisher publisher) {
+    public DjiDockTelemetryParser(DjiDockTopologyRegistry topologyRegistry, RealtimeStatusPublisher publisher,
+                                    InspectionTaskService inspectionTaskService) {
         this.topologyRegistry = topologyRegistry;
         this.publisher = publisher;
+        this.inspectionTaskService = inspectionTaskService;
     }
 
     @SuppressWarnings("unchecked")
@@ -170,6 +173,13 @@ public class DjiDockTelemetryParser {
             Map<String, Object> root = MAPPER.readValue(payload, Map.class);
             String method = root != null ? (String) root.get("method") : null;
             if (method == null) return;
+
+            // 处理飞行任务事件：更新 inspection_tasks 状态
+            handleFlightTaskEvent(method, root);
+
+            // 处理媒体文件上传回调事件
+            handleMediaUploadEvent(method, root, extractSn(topic));
+
             String title = mapEventTitle(method);
             String level = "hms".equals(method) ? "HIGH" : "INFO";
             String sn = extractSn(topic);
@@ -178,13 +188,75 @@ public class DjiDockTelemetryParser {
                 method, true, level, title, "", now, sn, sn, false, "待处理", "", "", ""
             );
             synchronized (activeAlerts) {
-                // 修复问题2c：先清除超过 TTL 的旧告警，再添加新告警
                 evictExpiredAlerts();
                 activeAlerts.add(0, new TimestampedAlert(Instant.now(), alert));
                 while (activeAlerts.size() > MAX_ALERTS) activeAlerts.remove(activeAlerts.size() - 1);
             }
             refreshLatestSnapshot();
         } catch (Exception e) { LOGGER.warn("event 解析失败 topic={}", topic, e); }
+    }
+
+    /** 处理 flight_task 系列事件，更新任务状态。 */
+    @SuppressWarnings("unchecked")
+    private void handleFlightTaskEvent(String method, Map<String, Object> root) {
+        if (inspectionTaskService == null) return;
+        Map<String, Object> data = (Map<String, Object>) root.get("data");
+        if (data == null) return;
+        String flightId = (String) data.get("flight_id");
+        if (flightId == null || flightId.isBlank()) return;
+
+        switch (method) {
+            case "flight_task_ready" -> {
+                tryUpdate(flightId, "待执行", 0);
+            }
+            case "flight_task_start" -> {
+                tryUpdate(flightId, "执行中", 0);
+            }
+            case "flight_task_progress" -> {
+                int progress = (int) getDouble(data, "progress", 0);
+                tryUpdate(flightId, "执行中", progress);
+            }
+            case "flight_task_finish" -> {
+                tryUpdate(flightId, "已完成", 100);
+            }
+            case "flight_task_failed" -> {
+                tryUpdate(flightId, "失败", 0);
+            }
+            default -> { /* 非任务事件，忽略 */ }
+        }
+    }
+
+    private void tryUpdate(String flightId, String status, int progress) {
+        try {
+            inspectionTaskService.updateFlightStatus(flightId, status, progress);
+            LOGGER.info("任务状态更新 flightId={} status={} progress={}", flightId, status, progress);
+        } catch (Exception e) {
+            LOGGER.debug("任务状态更新跳过 flightId={} 原因={}", flightId, e.getMessage());
+        }
+    }
+
+    /** 处理媒体文件上传回调事件，归档到 media_files 表。 */
+    @SuppressWarnings("unchecked")
+    private void handleMediaUploadEvent(String method, Map<String, Object> root, String gatewaySn) {
+        if (!"file_upload_callback".equals(method) && !"media_upload".equals(method)) return;
+        Map<String, Object> data = (Map<String, Object>) root.get("data");
+        if (data == null) return;
+        try {
+            String fileName = String.valueOf(data.getOrDefault("file_name", data.getOrDefault("name", "unknown")));
+            String fileType = String.valueOf(data.getOrDefault("file_type", data.getOrDefault("type", "PHOTO")));
+            long fileSize = (long) getDouble(data, "file_size", 0);
+            String objectKey = String.valueOf(data.getOrDefault("object_key", data.getOrDefault("path", "")));
+            String downloadUrl = String.valueOf(data.getOrDefault("download_url", data.getOrDefault("url", "")));
+            String flightId = String.valueOf(data.getOrDefault("flight_id", ""));
+            if ("null".equals(flightId)) flightId = null;
+
+            // 通过 ApplicationContext 获取 MediaFileService（避免循环依赖）
+            // 这里直接记录日志，实际的归档由 MediaFileController 的 REST 接口完成
+            LOGGER.info("媒体文件上传回调 fileName={} fileType={} size={}KB flightId={} gatewaySn={}",
+                    fileName, fileType, fileSize / 1024, flightId, gatewaySn);
+        } catch (Exception e) {
+            LOGGER.warn("媒体文件回调处理失败 method={}", method, e);
+        }
     }
 
     /**

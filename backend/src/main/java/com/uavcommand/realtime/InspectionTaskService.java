@@ -34,10 +34,22 @@ public class InspectionTaskService {
 
     public TaskView create(String operator, CreateTaskRequest request) {
         TaskDetails details = validate(request);
+        String status = request.status() != null && !request.status().isBlank() ? request.status() : "待执行";
+        int progress = request.progress() != null ? request.progress() : 0;
+        String flightId = request.flightId() != null && !request.flightId().isBlank() ? request.flightId() : null;
         InspectionTaskEntity entity = inspectionTaskRepository.save(new InspectionTaskEntity(
-                details.name(), details.route(), details.device(), "待执行", 0, details.scheduledAt(), details.frequency(), operator, LocalDateTime.now()
+                details.name(), details.route(), details.device(), status, progress,
+                details.scheduledAt(), details.frequency(), operator, LocalDateTime.now(), flightId
         ));
         return toView(entity);
+    }
+
+    /** 根据 flightId 更新任务状态和进度（MQTT 事件回传时调用）。 */
+    public TaskView updateFlightStatus(String flightId, String status, int progress) {
+        InspectionTaskEntity entity = inspectionTaskRepository.findByFlightId(flightId)
+                .orElseThrow(() -> new IllegalArgumentException("未找到 flightId=" + flightId + " 对应的任务"));
+        entity.updateFlightStatus(status, progress);
+        return toView(inspectionTaskRepository.save(entity));
     }
 
     public TaskView update(Long id, CreateTaskRequest request) {
@@ -62,7 +74,7 @@ public class InspectionTaskService {
     private TaskView toView(InspectionTaskEntity entity) {
         return new TaskView(
                 entity.getId(), entity.getName(), entity.getRoute(), entity.getDevice(), entity.getStatus(),
-                entity.getProgress(), entity.getScheduledAt(), entity.getFrequency(), entity.getOperator()
+                entity.getProgress(), entity.getScheduledAt(), entity.getFrequency(), entity.getOperator(), entity.getFlightId()
         );
     }
 
@@ -79,7 +91,11 @@ public class InspectionTaskService {
         return normalized;
     }
 
-    public record CreateTaskRequest(String name, String device, LocalDateTime scheduledAt, String frequency, String route) { }
+    public record CreateTaskRequest(String name, String device, LocalDateTime scheduledAt, String frequency, String route, String status, Integer progress, String flightId) {
+        public CreateTaskRequest(String name, String device, LocalDateTime scheduledAt, String frequency, String route) {
+            this(name, device, scheduledAt, frequency, route, null, null, null);
+        }
+    }
     private record TaskDetails(String name, String route, String device, LocalDateTime scheduledAt, String frequency) { }
-    public record TaskView(Long id, String name, String route, String device, String status, int progress, LocalDateTime scheduledAt, String frequency, String operator) { }
+    public record TaskView(Long id, String name, String route, String device, String status, int progress, LocalDateTime scheduledAt, String frequency, String operator, String flightId) { }
 }
